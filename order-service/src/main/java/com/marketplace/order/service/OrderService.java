@@ -18,11 +18,7 @@ public class OrderService {
     private final OutboxRepository outbox;
     private final Clock clock;
 
-    public OrderService(OrderRepository orders, OutboxRepository outbox) {
-        this(orders, outbox, Clock.systemUTC());
-    }
-
-    OrderService(OrderRepository orders, OutboxRepository outbox, Clock clock) {
+    public OrderService(OrderRepository orders, OutboxRepository outbox, Clock clock) {
         this.orders = orders;
         this.outbox = outbox;
         this.clock = clock;
@@ -40,4 +36,3 @@ public class OrderService {
         return order;
     }
 }
-
