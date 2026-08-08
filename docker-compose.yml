@@ -84,7 +84,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-      args: { MODULE: lucky-draw-write }
+      args: { MODULE: lucky-draw-service }
     environment:
       <<: *backend-environment
       DB_URL: jdbc:mysql://mysql:3306/luckydraw?useSSL=false&allowPublicKeyRetrieval=true

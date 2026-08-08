@@ -10,9 +10,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableRetry
 @EnableScheduling
 @SpringBootApplication
-public class LuckyDrawWriteApplication {
+public class LuckyDrawServiceApplication {
     public static void main(String[] args) {
-        SpringApplication.run(LuckyDrawWriteApplication.class, args);
+        SpringApplication.run(LuckyDrawServiceApplication.class, args);
     }
 
     @Bean

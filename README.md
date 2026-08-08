@@ -32,7 +32,7 @@ Seller workflow: sign in, create and publish a campaign, monitor Analytics, end/
 | Order Service + Order Outbox Relay | `order-service` |
 | Order DB + outbox table | MySQL `orders` schema |
 | Campaign Service | separate `campaign-service` |
-| Lucky Draw Write Service | `lucky-draw-service` from Gradle module `lucky-draw-write` |
+| Lucky Draw Write Service + Scheduler + Relay | `lucky-draw-service` |
 | Campaign Scheduler | internal scheduled component in `lucky-draw-service` |
 | Lucky Draw Outbox Relay | internal scheduled component in `lucky-draw-service` |
 | Write DB: campaign/ticket/quota/entry/outbox/snapshot | MySQL `luckydraw` schema shared by Campaign and Lucky Draw services |
@@ -42,7 +42,7 @@ Seller workflow: sign in, create and publish a campaign, monitor Analytics, end/
 | Notification Service | `notification-service` |
 | Reward Delivery strategies | `reward-service` with Product/Coupon strategies |
 
-Ticket, quota, entry, draw, scheduler, and outbox relay are deliberately combined in one Lucky Draw deployment and one write database. Campaign Service is separate as shown in the diagram, but saves campaign configuration and its outbox event into that same write database. Analytics Read Service and Projector are one deployment around Redis.
+Ticket, quota, entry, draw, scheduler, and outbox relay are deliberately combined in the single `lucky-draw-service` module, deployment, and write database. Campaign Service is separate as shown in the diagram, but saves campaign configuration and its outbox event into that same write database. Analytics Read Service and Projector are one deployment around Redis.
 
 ## URLs
 

@@ -12,7 +12,7 @@ include(
     "campaign-service",
     "common-events",
     "order-service",
-    "lucky-draw-write",
+    "lucky-draw-service",
     "analytics-service",
     "notification-service",
     "reward-service",
