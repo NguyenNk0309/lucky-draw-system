@@ -1,0 +1,12 @@
+CREATE DATABASE IF NOT EXISTS orders;
+CREATE DATABASE IF NOT EXISTS luckydraw;
+CREATE DATABASE IF NOT EXISTS notifications;
+CREATE DATABASE IF NOT EXISTS rewards;
+CREATE DATABASE IF NOT EXISTS integrationtest;
+CREATE USER IF NOT EXISTS 'lucky'@'%' IDENTIFIED BY 'lucky';
+GRANT ALL PRIVILEGES ON orders.* TO 'lucky'@'%';
+GRANT ALL PRIVILEGES ON luckydraw.* TO 'lucky'@'%';
+GRANT ALL PRIVILEGES ON notifications.* TO 'lucky'@'%';
+GRANT ALL PRIVILEGES ON rewards.* TO 'lucky'@'%';
+GRANT ALL PRIVILEGES ON integrationtest.* TO 'lucky'@'%';
+FLUSH PRIVILEGES;
