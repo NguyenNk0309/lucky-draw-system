@@ -12,6 +12,9 @@ import java.time.Clock;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 
 @Service
 public class EntryService {
@@ -33,6 +36,8 @@ public class EntryService {
     }
 
     @Transactional
+    @Retryable(retryFor = CannotAcquireLockException.class, maxAttempts = 5,
+            backoff = @Backoff(delay = 10, multiplier = 2))
     public Entry submit(String userId, String campaignId, String ticketId, String correlationId) {
         var campaign = campaigns.lockShared(campaignId).orElseThrow(DomainException::notFound);
         if (!campaign.isOpenAt(clock.instant())) throw DomainException.campaignClosed();
