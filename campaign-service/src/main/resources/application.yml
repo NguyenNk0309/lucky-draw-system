@@ -1,0 +1,12 @@
+server:
+  port: ${SERVER_PORT:8083}
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/luckydraw?useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${DB_USER:lucky}
+    password: ${DB_PASSWORD:lucky}
+  jackson.serialization.write-dates-as-timestamps: false
+management:
+  endpoints.web.exposure.include: health,info
+  endpoint.health.probes.enabled: true
+springdoc.swagger-ui.path: /swagger-ui.html

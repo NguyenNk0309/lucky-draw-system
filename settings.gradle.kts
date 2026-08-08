@@ -8,11 +8,11 @@ pluginManagement {
 rootProject.name = "lucky-draw"
 
 include(
+    "api-gateway",
+    "campaign-service",
     "common-events",
     "order-service",
     "lucky-draw-write",
-    "lucky-draw-relay",
-    "lucky-draw-scheduler",
     "analytics-service",
     "notification-service",
     "reward-service",

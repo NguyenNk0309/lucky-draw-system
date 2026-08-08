@@ -53,18 +53,6 @@ public class JdbcWriteRepository implements CampaignRepository, TicketRepository
     }
 
     @Override
-    public Campaign insert(Campaign campaign) {
-        jdbc.update("""
-                INSERT INTO campaigns
-                  (id, seller_id, name, status, max_entries_per_user, start_at, end_at, reward_type, reward_reference)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, campaign.id(), campaign.sellerId(), campaign.name(), campaign.status().name(),
-                campaign.maxEntriesPerUser(), Timestamp.from(campaign.startAt()), Timestamp.from(campaign.endAt()),
-                campaign.reward().type().name(), campaign.reward().reference());
-        return campaign;
-    }
-
-    @Override
     public List<Campaign> findAll() {
         return jdbc.query("SELECT * FROM campaigns ORDER BY created_at DESC", CAMPAIGN_ROW);
     }
@@ -82,18 +70,6 @@ public class JdbcWriteRepository implements CampaignRepository, TicketRepository
     @Override
     public Optional<Campaign> lockExclusive(String id) {
         return one("SELECT * FROM campaigns WHERE id = ? FOR UPDATE", CAMPAIGN_ROW, id);
-    }
-
-    @Override
-    public boolean activate(String id, String sellerId) {
-        return jdbc.update("UPDATE campaigns SET status='ACTIVE' WHERE id=? AND seller_id=? AND status='DRAFT'",
-                id, sellerId) == 1;
-    }
-
-    @Override
-    public boolean cancel(String id, String sellerId) {
-        return jdbc.update("UPDATE campaigns SET status='CANCELLED' WHERE id=? AND seller_id=? AND status IN ('DRAFT','ACTIVE')",
-                id, sellerId) == 1;
     }
 
     @Override

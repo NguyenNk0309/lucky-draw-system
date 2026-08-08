@@ -6,6 +6,7 @@ import com.marketplace.events.OrderCompleted;
 import com.marketplace.order.domain.Order;
 import com.marketplace.order.domain.port.OrderRepository;
 import com.marketplace.order.domain.port.OutboxRepository;
+import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -23,6 +24,13 @@ public class JdbcOrderRepository implements OrderRepository, OutboxRepository {
     public void insert(Order order) {
         jdbc.update("INSERT INTO orders (id, user_id, total, created_at) VALUES (?, ?, ?, ?)",
                 order.id(), order.userId(), order.total(), order.createdAt());
+    }
+
+    @Override
+    public List<Order> findByUser(String userId) {
+        return jdbc.query("SELECT * FROM orders WHERE user_id=? ORDER BY created_at DESC", (rs, n) -> new Order(
+                rs.getString("id"), rs.getString("user_id"), rs.getBigDecimal("total"),
+                rs.getTimestamp("created_at").toInstant()), userId);
     }
 
     @Override

@@ -3,11 +3,8 @@ package com.marketplace.luckydraw.infrastructure.mysql;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.marketplace.luckydraw.domain.Campaign;
-import com.marketplace.luckydraw.domain.CampaignStatus;
 import com.marketplace.luckydraw.domain.DomainException;
-import com.marketplace.luckydraw.domain.Reward;
-import com.marketplace.luckydraw.service.CampaignService;
+import com.marketplace.luckydraw.service.CampaignLifecycleService;
 import com.marketplace.luckydraw.service.DrawService;
 import com.marketplace.luckydraw.service.EntryService;
 import java.time.Clock;
@@ -108,7 +105,7 @@ class WriteContextIntegrationTest {
         for (String ticket : tickets) transaction.executeWithoutResult(ignored ->
                 entries.submit("customer", "draw-test", ticket, "test"));
 
-        var campaigns = new CampaignService(repository, repository, repository, clock);
+        var campaigns = new CampaignLifecycleService(repository, repository, repository, clock);
         transaction.executeWithoutResult(ignored -> campaigns.end("draw-test", "seller"));
         var draw = new DrawService(repository, repository, repository, repository, clock);
         var first = transaction.execute(ignored -> draw.draw("draw-test", "seller", "first"));
@@ -150,8 +147,10 @@ class WriteContextIntegrationTest {
     }
 
     private void insertCampaign(String id, int limit) {
-        transaction.executeWithoutResult(ignored -> repository.insert(new Campaign(id, "seller", id,
-                CampaignStatus.ACTIVE, limit, NOW.minusSeconds(60), NOW.plusSeconds(3600),
-                new Reward(Reward.Type.COUPON, "C50"), null, null)));
+        transaction.executeWithoutResult(ignored -> jdbc.update("""
+                INSERT INTO campaigns
+                  (id,seller_id,name,status,max_entries_per_user,start_at,end_at,reward_type,reward_reference)
+                VALUES (?, 'seller', ?, 'ACTIVE', ?, ?, ?, 'COUPON', 'C50')
+                """, id, id, limit, NOW.minusSeconds(60), NOW.plusSeconds(3600)));
     }
 }

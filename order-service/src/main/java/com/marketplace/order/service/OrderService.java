@@ -6,6 +6,7 @@ import com.marketplace.order.domain.port.OrderRepository;
 import com.marketplace.order.domain.port.OutboxRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,4 +36,6 @@ public class OrderService {
         }
         return order;
     }
+
+    public List<Order> list(String userId) { return orders.findByUser(userId); }
 }

@@ -6,7 +6,9 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,6 +24,13 @@ public class OrderController {
 
     public OrderController(OrderService service) {
         this.service = service;
+    }
+
+    @GetMapping
+    public List<Order> list(@RequestHeader("X-Demo-User") String userId,
+            @RequestHeader(value = "X-Demo-Role", defaultValue = "CUSTOMER") String role) {
+        if (!"CUSTOMER".equals(role)) throw new ForbiddenException();
+        return service.list(userId);
     }
 
     @PostMapping
