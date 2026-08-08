@@ -80,7 +80,7 @@ services:
       <<: *backend-healthcheck
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
 
-  lucky-draw-write:
+  lucky-draw-service:
     build:
       context: .
       dockerfile: Dockerfile.backend
@@ -97,34 +97,21 @@ services:
       <<: *backend-healthcheck
       test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
 
-  lucky-draw-relay:
+  campaign-service:
     build:
       context: .
       dockerfile: Dockerfile.backend
-      args: { MODULE: lucky-draw-relay }
+      args: { MODULE: campaign-service }
     environment:
       <<: *backend-environment
       DB_URL: jdbc:mysql://mysql:3306/luckydraw?useSSL=false&allowPublicKeyRetrieval=true
+    ports:
+      - "18083:8083"
     depends_on:
-      lucky-draw-write: { condition: service_healthy }
-      redpanda: { condition: service_healthy }
+      lucky-draw-service: { condition: service_healthy }
     healthcheck:
       <<: *backend-healthcheck
       test: ["CMD", "wget", "-qO-", "http://localhost:8083/actuator/health"]
-
-  lucky-draw-scheduler:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
-      args: { MODULE: lucky-draw-scheduler }
-    environment:
-      <<: *backend-environment
-      DB_URL: jdbc:mysql://mysql:3306/luckydraw?useSSL=false&allowPublicKeyRetrieval=true
-    depends_on:
-      lucky-draw-write: { condition: service_healthy }
-    healthcheck:
-      <<: *backend-healthcheck
-      test: ["CMD", "wget", "-qO-", "http://localhost:8084/actuator/health"]
 
   analytics-service:
     build:
@@ -173,29 +160,40 @@ services:
       <<: *backend-healthcheck
       test: ["CMD", "wget", "-qO-", "http://localhost:8087/actuator/health"]
 
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      args: { MODULE: api-gateway }
+    environment:
+      DEMO_AUTH_SECRET: local-compose-secret-change-in-production
+      ORDER_SERVICE_URL: http://order-service:8081
+      CAMPAIGN_SERVICE_URL: http://campaign-service:8083
+      LUCKY_DRAW_SERVICE_URL: http://lucky-draw-service:8082
+      ANALYTICS_SERVICE_URL: http://analytics-service:8085
+      NOTIFICATION_SERVICE_URL: http://notification-service:8086
+      REWARD_SERVICE_URL: http://reward-service:8087
+    ports:
+      - "18080:8080"
+    depends_on:
+      order-service: { condition: service_healthy }
+      campaign-service: { condition: service_healthy }
+      lucky-draw-service: { condition: service_healthy }
+      analytics-service: { condition: service_healthy }
+      notification-service: { condition: service_healthy }
+      reward-service: { condition: service_healthy }
+    healthcheck:
+      <<: *backend-healthcheck
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  gateway:
-    image: nginx:1.27-alpine
     ports:
       - "8080:80"
-    volumes:
-      - ./deploy/gateway.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      frontend: { condition: service_healthy }
-      order-service: { condition: service_healthy }
-      lucky-draw-write: { condition: service_healthy }
-      analytics-service: { condition: service_healthy }
-      notification-service: { condition: service_healthy }
-      reward-service: { condition: service_healthy }
+      api-gateway: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/health"]
       interval: 5s
