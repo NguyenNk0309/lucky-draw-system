@@ -44,9 +44,8 @@ public class EntryService {
         var entry = entries.insert(entryId, campaignId, userId, ticketId, clock.instant());
         var eventId = UUID.randomUUID();
         var event = new EntrySubmitted(eventId, clock.instant(), entry.id(), correlationId,
-                entry.id(), campaignId, userId, ticketId, entry.sequence());
+                entry.id(), campaignId, userId, ticketId, entry.sequence(), campaign.maxEntriesPerUser());
         outbox.append(eventId.toString(), campaignId, "EntrySubmitted", event);
         return entry;
     }
 }
-
