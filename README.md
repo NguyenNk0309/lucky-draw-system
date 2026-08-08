@@ -1,111 +1,75 @@
 # Lucky Draw microservices
 
-A locally runnable Java 17/Spring Boot and React implementation of the supplied architecture. Commands enter through Nginx, transactional state lives in MySQL, events travel through Redpanda (Kafka API), and the CQRS read model is maintained only by an idempotent Redis projector.
+Complete local demo of the supplied architecture using Java 17, Spring Boot, React, MySQL, Redis, and a Kafka-compatible Redpanda broker.
 
 ## Run
 
-Prerequisite: Docker Desktop with Docker Compose v2. No local Java, Gradle, Node, MySQL, Redis, or Kafka installation is used.
+Docker Desktop with Docker Compose v2 is the only prerequisite.
 
 ```bash
 docker compose up --build
 ```
 
-Open <http://localhost:8080>. Stop with:
+Open <http://localhost:8080>. Stop with `docker compose down`; reset demo data with `docker compose down -v`.
 
-```bash
-docker compose down
-```
+## Demo login and workflow
 
-Reset all deterministic demo data and broker/read-model state:
+| Role | Username | Password |
+| --- | --- | --- |
+| Customer | `customer` | `customer123` |
+| Seller | `seller` | `seller123` |
 
-```bash
-docker compose down -v
-docker compose up --build
-```
+Customer workflow: sign in, buy a product over ₫1,000,000, wait briefly for the Kafka-issued ticket, open **Lucky wheel**, and spin with that ticket. The customer spin submits an entry; it does not choose a winner. This preserves the architecture’s `submit entry → view result` contract.
 
-## Demo identities and workflow
+Seller workflow: sign in, create and publish a campaign, monitor Analytics, end/freeze the campaign, then spin the final wheel. The Lucky Draw Service securely selects the winner from the frozen MySQL snapshot. The customer then sees the notification and reward.
 
-- Customer: `customer-1` / `CUSTOMER`
-- Seller: `seller-1` / `SELLER`
-- Seed campaign: `demo-campaign`, active, two entries per customer, coupon reward
-- Seed orders: two qualifying orders and one non-qualifying order; qualifying orders asynchronously issue tickets
+## Exact diagram mapping
 
-Use the role switcher in the header. As customer, wait briefly for the two tickets, submit both, create another qualifying order to demonstrate the quota conflict, and reuse a consumed ticket to demonstrate its separate conflict. As seller, view `lastUpdatedAt`, end the campaign, and draw twice; the winner and snapshot hash remain unchanged. The customer then receives a locally stored notification and reward.
+| Diagram component | Implementation / deployment |
+| --- | --- |
+| Customer App + Seller/Admin Portal | `frontend` React application |
+| API Gateway: auth, rate limit, routing | `api-gateway` Spring Boot service |
+| Order Service + Order Outbox Relay | `order-service` |
+| Order DB + outbox table | MySQL `orders` schema |
+| Campaign Service | separate `campaign-service` |
+| Lucky Draw Write Service | `lucky-draw-service` from Gradle module `lucky-draw-write` |
+| Campaign Scheduler | internal scheduled component in `lucky-draw-service` |
+| Lucky Draw Outbox Relay | internal scheduled component in `lucky-draw-service` |
+| Write DB: campaign/ticket/quota/entry/outbox/snapshot | MySQL `luckydraw` schema shared by Campaign and Lucky Draw services |
+| Analytics Read Service + Analytics Projector | `analytics-service` |
+| Read Model DB | Redis |
+| Message broker | Redpanda Kafka API |
+| Notification Service | `notification-service` |
+| Reward Delivery strategies | `reward-service` with Product/Coupon strategies |
 
-Automated stack smoke test (run after a clean startup):
+Ticket, quota, entry, draw, scheduler, and outbox relay are deliberately combined in one Lucky Draw deployment and one write database. Campaign Service is separate as shown in the diagram, but saves campaign configuration and its outbox event into that same write database. Analytics Read Service and Projector are one deployment around Redis.
 
-```powershell
-.\deploy\smoke-test.ps1
-```
-
-## Ports and API documentation
+## URLs
 
 | Component | URL |
 | --- | --- |
-| Frontend + gateway | <http://localhost:8080> |
+| Web application | <http://localhost:8080> |
+| API Gateway health | <http://localhost:18080/actuator/health> |
 | Order OpenAPI | <http://localhost:18081/swagger-ui.html> |
-| Write OpenAPI | <http://localhost:18082/swagger-ui.html> |
+| Lucky Draw OpenAPI | <http://localhost:18082/swagger-ui.html> |
+| Campaign OpenAPI | <http://localhost:18083/swagger-ui.html> |
 | Analytics OpenAPI | <http://localhost:18085/swagger-ui.html> |
-| MySQL inspection | `localhost:3307`, user/password `lucky` |
-| Redis inspection | `localhost:6380` |
-| Kafka-compatible broker | `localhost:19092` |
+| MySQL / Redis / Kafka | `3307` / `6380` / `19092` |
 
-Main endpoints through the gateway:
+Login is `POST /auth/login`; use the returned token as `Authorization: Bearer <token>`. Main gateway routes are `GET|POST /api/orders`, `GET /api/tickets`, `GET|POST /api/campaigns`, campaign `activate|cancel|end|entries|draw`, analytics `stats|me`, notifications, and rewards.
 
-- `POST /api/orders`
-- `GET /api/write/tickets`
-- `GET|POST /api/write/campaigns`
-- `POST /api/write/campaigns/{id}/activate|end|cancel|draw`
-- `POST /api/write/campaigns/{id}/entries`
-- `GET /api/analytics/campaigns/{id}/stats`
-- `GET /api/analytics/campaigns/{id}/me`
-- `GET /api/notifications`
-- `GET /api/rewards`
+## Correctness
 
-Demo authentication is deliberately isolated to `X-Demo-User` and `X-Demo-Role` headers. Every seller mutation checks campaign ownership in the write service; analytics checks projected ownership. Replace the gateway/header mechanism with verified identity claims for a real deployment.
+Order creation commits order and `OrderCompleted` outbox row together. It never calls Lucky Draw synchronously. Ticket issuing is idempotent by unique order ID.
 
-## Modules and responsibilities
+Entry submission is one local transaction: `SELECT campaign FOR SHARE`, atomically consume ticket, reserve campaign/user quota, insert entry, append `EntrySubmitted`, commit. Redis is updated only by Kafka projection. Closing takes the exclusive campaign lock and freezes ordered snapshot items. Draw uses `SecureRandom`, records selected index and SHA-256 snapshot hash, moves `ENDED → DRAWN`, and appends `WinnerPicked` atomically. Repeated draw returns the persisted winner.
 
-- `common-events`: Spring-free event records with event ID, aggregate ID, correlation ID, and timestamp.
-- `order-service`: isolated local order bounded context; commits order and `OrderCompleted` outbox row together and relays asynchronously.
-- `lucky-draw-write`: campaigns, tickets, quota, entries, snapshot, draw audit, and write outbox in one MySQL bounded context.
-- `lucky-draw-relay`: publishes committed write outbox rows at least once and marks them only after broker acknowledgement.
-- `lucky-draw-scheduler`: takes the exclusive close lock, changes `ACTIVE -> ENDED`, freezes dense snapshot items, and hashes them.
-- `analytics-service`: atomically deduplicates and projects campaign/entry/winner events into Redis; serves reads with `lastUpdatedAt`.
-- `notification-service`: independently deduplicates `WinnerPicked` and stores a local notification behind `NotificationProvider`.
-- `reward-service`: creates a unique claim before delivery and selects `ProductReward` or `CouponReward` through `RewardStrategy`.
-- `frontend`: responsive customer and seller workspaces.
-- `gateway`: same-origin routing and the replacement seam for production authentication/rate limiting.
+Analytics, notification, and reward consumers independently deduplicate events. Reward claims are persisted before local Product/Coupon delivery.
 
-No Spring Boot application module depends on another application module; all share only `common-events`.
-
-## Correctness decisions
-
-Entry submission is one local ACID transaction: `SELECT campaign FOR SHARE`, conditional ticket consumption, conditional quota increment, entry insert, and outbox insert. A quota failure rolls the consumed ticket back. Shared campaign locks permit concurrent submissions but force close to wait; later submissions see `ENDED`.
-
-The scheduler freezes ordered write-side entry IDs once. Draw uses `SecureRandom.nextLong(bound)`, selects from that snapshot, writes its audit, conditionally changes `ENDED -> DRAWN`, and appends `WinnerPicked` in the same transaction. Redis is never used to select a winner.
-
-Outbox delivery is at least once. Ticket creation uses unique `order_id`; Redis projection uses one Lua transaction for event deduplication and counter changes; notifications and reward claims use `(event_id, consumer_name)` plus unique campaign constraints. Read responses expose `lastUpdatedAt` because projection is eventually consistent.
-
-Local substitutions are Redpanda for a managed Kafka cluster, header-based demo auth for an identity provider, database-backed notifications for email/SMS/push, and local fulfillment/coupon adapters for external reward systems.
-
-## Tests and builds
-
-Backend unit tests and jars (inside Java 17 Docker):
+## Verification
 
 ```bash
-docker run --rm -v "$PWD:/workspace" -w /workspace gradle:8.10.2-jdk17-alpine ./gradlew test bootJar --no-daemon
-```
-
-The MySQL integration/concurrency suite is enabled when `TEST_DB_URL` is set. Against the running stack/network:
-
-```bash
-docker run --rm --network lucky-draw_default -e TEST_DB_URL="jdbc:mysql://mysql:3306/integrationtest?useSSL=false&allowPublicKeyRetrieval=true" -e TEST_DB_USER=lucky -e TEST_DB_PASSWORD=lucky -v "$PWD:/workspace" -w /workspace gradle:8.10.2-jdk17-alpine ./gradlew :lucky-draw-write:test --rerun-tasks --no-daemon
-```
-
-Frontend:
-
-```bash
+docker run --rm -v "$PWD:/workspace" -w /workspace gradle:8.10.2-jdk17-alpine gradle test bootJar --no-daemon
 cd frontend
 npm ci
 npm test
@@ -114,4 +78,10 @@ npm run format
 npm run build
 ```
 
-`docker compose build` builds every production image. `deploy/smoke-test.ps1` covers the major end-to-end flow, including quota rejection, ticket reuse rejection, Redis catch-up, duplicate-event replay, reward/notification deduplication, snapshot hashing, and repeated draw idempotency.
+After the stack is healthy:
+
+```powershell
+.\deploy\smoke-test.ps1
+```
+
+The repeatable smoke test creates its own campaign and orders, so existing demo data is preserved.
