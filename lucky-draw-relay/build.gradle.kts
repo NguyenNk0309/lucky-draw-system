@@ -10,7 +10,7 @@ dependencies {
     implementation(project(":common-events"))
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
+    implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.kafka:spring-kafka")
     runtimeOnly("com.mysql:mysql-connector-j")
 }
-
