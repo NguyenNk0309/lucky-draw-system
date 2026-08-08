@@ -18,9 +18,7 @@ describe('api', () => {
       ),
     );
 
-    await expect(
-      api('/entries', { userId: 'customer-1', role: 'CUSTOMER' }),
-    ).rejects.toEqual(
+    await expect(api('/entries', 'signed-token')).rejects.toEqual(
       expect.objectContaining({
         status: 409,
         code: 'ENTRY_QUOTA_REACHED',

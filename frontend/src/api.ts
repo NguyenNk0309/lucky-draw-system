@@ -1,5 +1,3 @@
-import type { Role } from './types';
-
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -10,23 +8,17 @@ export class ApiError extends Error {
   }
 }
 
-export interface DemoIdentity {
-  userId: string;
-  role: Role;
-}
-
 export async function api<T>(
   path: string,
-  identity: DemoIdentity,
+  token?: string,
   init?: RequestInit,
 ): Promise<T> {
   const response = await fetch(path, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      'X-Demo-User': identity.userId,
-      'X-Demo-Role': identity.role,
       'X-Correlation-Id': crypto.randomUUID(),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
   });

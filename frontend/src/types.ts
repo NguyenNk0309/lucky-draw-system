@@ -1,5 +1,10 @@
 export type Role = 'CUSTOMER' | 'SELLER';
-
+export interface Order {
+  id: string;
+  userId: string;
+  total: number;
+  createdAt: string;
+}
 export interface Campaign {
   id: string;
   sellerId: string;
@@ -12,14 +17,12 @@ export interface Campaign {
   winnerEntryId?: string;
   snapshotHash?: string;
 }
-
 export interface Ticket {
   id: string;
   orderId: string;
   status: 'ISSUED' | 'CONSUMED';
   campaignId?: string;
 }
-
 export interface Stats {
   campaignId: string;
   name?: string;
@@ -31,7 +34,6 @@ export interface Stats {
   snapshotHash?: string;
   lastUpdatedAt?: string;
 }
-
 export interface MyResult {
   campaignId: string;
   entryIds: string[];
@@ -39,4 +41,22 @@ export interface MyResult {
   winnerEntryId?: string;
   won: boolean;
   lastUpdatedAt?: string;
+}
+export interface DrawResult {
+  winner: { id: string; userId: string; sequence: number };
+  snapshotHash: string;
+  selectedIndex: number;
+}
+export interface Notification {
+  id: string;
+  campaignId: string;
+  message: string;
+  sentAt: string;
+}
+export interface RewardClaim {
+  id: string;
+  campaignId: string;
+  reference: string;
+  deliveryReference?: string;
+  deliveredAt?: string;
 }

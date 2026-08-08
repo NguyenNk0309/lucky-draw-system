@@ -31,6 +31,10 @@ button {
 button:hover {
   filter: brightness(1.06);
 }
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
 button.secondary {
   background: #29334d;
   color: #dfe6f7;
@@ -85,7 +89,11 @@ nav a.active {
   color: white;
 }
 .identity {
-  min-width: 13rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: #aab4ce;
+  font-size: 0.82rem;
 }
 main {
   width: min(1120px, calc(100% - 2rem));
@@ -203,6 +211,24 @@ select {
   border-top: 1px solid #2a354f;
   padding-top: 0.7rem;
 }
+.items small,
+.campaign-row small {
+  display: block;
+  color: #8d98b1;
+  margin-top: 0.25rem;
+}
+.campaign-list li {
+  display: grid;
+  gap: 0.75rem;
+  border-top: 1px solid #2a354f;
+  padding-top: 0.9rem;
+}
+.campaign-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 1rem;
+}
 .campaign-list button {
   width: 100%;
   display: flex;
@@ -250,6 +276,198 @@ code {
   overflow-wrap: anywhere;
   color: #c8d2ec;
 }
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+.login-card {
+  width: min(28rem, 100%);
+  padding: 2rem;
+  border: 1px solid #303b58;
+  border-radius: 1.2rem;
+  background: #151d30;
+  box-shadow: 0 24px 70px #0008;
+}
+.login-card h1 {
+  margin-bottom: 0.7rem;
+  font-size: 2rem;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 1.2rem;
+  border-radius: 50%;
+  color: #111827;
+  background: #f7c948;
+  font-size: 1.4rem;
+}
+.demo-credentials {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 1rem;
+  color: #8d98b1;
+  font-size: 0.78rem;
+}
+.shop-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2rem;
+  padding: 2.5rem 0 1rem;
+}
+.shop-hero h2 {
+  margin-bottom: 0.7rem;
+}
+.shop-hero p {
+  color: #aab4ce;
+  max-width: 58ch;
+}
+.ticket-badge {
+  min-width: 10rem;
+  display: grid;
+  text-align: center;
+  gap: 0.25rem;
+  padding: 1.1rem;
+  border: 1px solid #6f5720;
+  border-radius: 1rem;
+  background: #211d16;
+}
+.ticket-badge strong {
+  color: #f7c948;
+  font-size: 2rem;
+}
+.ticket-badge span {
+  color: #aab4ce;
+  font-size: 0.8rem;
+}
+.ticket-badge a,
+.card a {
+  color: #f7c948;
+}
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  color: #8d98b1;
+}
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+.product-card {
+  display: grid;
+  align-content: start;
+  gap: 0.65rem;
+  padding: 1rem;
+  border: 1px solid #303b58;
+  border-radius: 1rem;
+  background: #151d30;
+}
+.product-card h3,
+.product-card p {
+  margin: 0;
+}
+.product-card p {
+  min-height: 2.4rem;
+  color: #8d98b1;
+  font-size: 0.82rem;
+}
+.product-art {
+  display: grid;
+  place-items: center;
+  min-height: 8rem;
+  border-radius: 0.75rem;
+  background: linear-gradient(145deg, #253353, #11182a);
+  font-size: 4rem;
+}
+.price {
+  color: #f7c948;
+  font-size: 1.15rem;
+}
+.wheel-layout {
+  grid-template-columns: minmax(20rem, 0.9fr) minmax(0, 1.1fr);
+}
+.wheel-stage {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  padding: 2rem 0 0.5rem;
+}
+.wheel {
+  width: min(20rem, 74vw);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 0.8rem solid #f3d276;
+  border-radius: 50%;
+  background: conic-gradient(
+    #dc315a 0 45deg,
+    #f7c948 45deg 90deg,
+    #694bd6 90deg 135deg,
+    #2bb8a9 135deg 180deg,
+    #dc315a 180deg 225deg,
+    #f7c948 225deg 270deg,
+    #694bd6 270deg 315deg,
+    #2bb8a9 315deg
+  );
+  box-shadow:
+    0 0 0 0.35rem #6f5720,
+    0 22px 50px #0008;
+}
+.wheel::before {
+  content: '';
+  width: 84%;
+  height: 84%;
+  border: 2px dashed #fff8;
+  border-radius: 50%;
+}
+.wheel.spinning {
+  animation: wheel-spin 2.5s cubic-bezier(0.12, 0.67, 0.1, 1) forwards;
+}
+.wheel-hub {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 4.2rem;
+  aspect-ratio: 1;
+  border: 0.4rem solid #f3d276;
+  border-radius: 50%;
+  color: #f7c948;
+  background: #172038;
+  font-size: 1.7rem;
+}
+.wheel-pointer {
+  position: absolute;
+  z-index: 2;
+  top: 1.1rem;
+  width: 0;
+  height: 0;
+  border-left: 1.1rem solid transparent;
+  border-right: 1.1rem solid transparent;
+  border-top: 2.3rem solid #f4f0df;
+  filter: drop-shadow(0 3px 2px #0008);
+}
+.wheel-result {
+  min-height: 1.5rem;
+  color: #f7c948;
+  font-size: 1.05rem;
+  text-align: center;
+}
+.draw-audit {
+  margin-top: 1.2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #303b58;
+}
+@keyframes wheel-spin {
+  to {
+    transform: rotate(2160deg);
+  }
+}
 @media (max-width: 760px) {
   header {
     flex-wrap: wrap;
@@ -265,10 +483,23 @@ code {
     margin-left: auto;
   }
   .grid.two,
+  .wheel-layout,
   .metrics {
     grid-template-columns: 1fr;
   }
   main {
     margin-top: 1rem;
+  }
+  .shop-hero {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .product-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 480px) {
+  .product-grid {
+    grid-template-columns: 1fr;
   }
 }

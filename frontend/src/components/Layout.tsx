@@ -1,43 +1,39 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth';
-import type { Role } from '../types';
 
 export function Layout() {
   const auth = useAuth();
-  const navigate = useNavigate();
-
-  function changeRole(role: Role) {
-    auth.setRole(role);
-    navigate(role === 'CUSTOMER' ? '/customer' : '/admin');
-  }
-
+  const session = auth.session!;
   return (
     <>
       <header>
         <div>
-          <span className="eyebrow">Marketplace loyalty</span>
-          <h1>Lucky Draw</h1>
+          <span className="eyebrow">Demo marketplace</span>
+          <h1>Lucky Shop</h1>
         </div>
         <nav aria-label="Primary">
-          <NavLink to="/customer">Customer</NavLink>
-          <NavLink to="/admin">Seller</NavLink>
+          {session.role === 'CUSTOMER' ? (
+            <NavLink to="/shop">Shop & orders</NavLink>
+          ) : (
+            <>
+              <NavLink to="/campaigns">Campaigns</NavLink>
+              <NavLink to="/analytics">Analytics</NavLink>
+            </>
+          )}
+          <NavLink to="/lucky-draw">Lucky wheel</NavLink>
         </nav>
-        <label className="identity">
-          Demo role
-          <select
-            value={auth.role}
-            onChange={(event) => changeRole(event.target.value as Role)}
-          >
-            <option value="CUSTOMER">Customer · customer-1</option>
-            <option value="SELLER">Seller · seller-1</option>
-          </select>
-        </label>
+        <div className="identity">
+          <span>{session.userId}</span>
+          <button className="secondary" onClick={auth.logout}>
+            Sign out
+          </button>
+        </div>
       </header>
       <main>
         <Outlet />
       </main>
       <footer>
-        Event-driven demo · analytics may update shortly after a command.
+        Campaign → order → ticket → entry → winner → notification → reward
       </footer>
     </>
   );
