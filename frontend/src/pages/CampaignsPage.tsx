@@ -64,16 +64,16 @@ export function CampaignsPage() {
           <form onSubmit={create}>
             <label>
               Name
-              <input name="name" required defaultValue="Weekend Mega Draw" />
+              <input name="name" required placeholder="Campaign name" />
             </label>
             <div className="grid two">
               <label>
                 Duration (minutes)
-                <input name="minutes" type="number" min="1" defaultValue="30" />
+                <input name="minutes" type="number" min="1" required />
               </label>
               <label>
                 Entries per user
-                <input name="limit" type="number" min="1" defaultValue="2" />
+                <input name="limit" type="number" min="1" required />
               </label>
             </div>
             <label>
@@ -85,7 +85,11 @@ export function CampaignsPage() {
             </label>
             <label>
               Reward reference
-              <input name="rewardReference" required defaultValue="SHOP-50" />
+              <input
+                name="rewardReference"
+                required
+                placeholder="Coupon code or product reference"
+              />
             </label>
             <button>Create draft</button>
           </form>

@@ -13,7 +13,7 @@ export function Layout() {
         </div>
         <nav aria-label="Primary">
           {session.role === 'CUSTOMER' ? (
-            <NavLink to="/shop">Shop & orders</NavLink>
+            <NavLink to="/shop">Orders</NavLink>
           ) : (
             <>
               <NavLink to="/campaigns">Campaigns</NavLink>
