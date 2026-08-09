@@ -37,7 +37,7 @@ export function LoginPage() {
         <span className="eyebrow">Demo marketplace</span>
         <h1>Lucky Shop</h1>
         <p className="muted">
-          Create orders, earn tickets, and join a lucky draw.
+          Buy products, earn tickets, and join a lucky draw.
         </p>
         <ErrorNotice message={error} />
         <form onSubmit={submit}>

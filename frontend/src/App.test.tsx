@@ -22,7 +22,7 @@ describe('app routing', () => {
     ).toBeInTheDocument();
   });
 
-  it('starts the customer order page without seeded products', async () => {
+  it('shows the frontend-only mock product catalog', async () => {
     localStorage.setItem(
       'lucky-draw-session',
       JSON.stringify({
@@ -52,8 +52,8 @@ describe('app routing', () => {
     );
 
     expect(
-      await screen.findByRole('button', { name: 'Create order' }),
+      await screen.findByText('Noise-cancelling Headphones'),
     ).toBeInTheDocument();
-    expect(screen.queryByText('Noise-cancelling Headphones')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Buy now' })).toHaveLength(4);
   });
 });

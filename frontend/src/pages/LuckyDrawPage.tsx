@@ -144,8 +144,8 @@ function CustomerWheel() {
           <Loading active={campaigns.loading || tickets.loading} />
           {!tickets.loading && !available.length && (
             <p className="muted">
-              No ticket ready. <Link to="/shop">Create a qualifying order</Link>{' '}
-              to get one, then return here.
+              No ticket ready. <Link to="/shop">Buy a qualifying product</Link>,
+              then return here.
             </p>
           )}
           <div className="ticket-actions">

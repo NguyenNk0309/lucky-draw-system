@@ -12,7 +12,7 @@ docker compose up --build
 
 Open <http://localhost:8080>. Stop with `docker compose down`; reset all local application data with `docker compose down -v`.
 
-The application starts with no campaigns, orders, tickets, entries, notifications, or rewards.
+The application starts with no persisted campaigns, orders, tickets, entries, notifications, or rewards. Shop items are a frontend-only mock catalog.
 
 ## UI test flow
 
@@ -23,8 +23,8 @@ The application starts with no campaigns, orders, tickets, entries, notification
 
 1. Sign in as `seller` and open **Campaigns**.
 2. Create a campaign: enter a name, duration such as `30`, entry limit such as `2`, reward type, and reward reference. Click **Create draft**, then **Publish**.
-3. Sign out, sign in as `customer`, and open **Orders**.
-4. Create an order with a total greater than `1,000,000`. Refresh **My tickets** until an `ISSUED` ticket appears.
+3. Sign out, sign in as `customer`, and open **Shop & orders**.
+4. Buy a product priced above `1,000,000`. Refresh **My tickets** until an `ISSUED` ticket appears.
 5. Open **Lucky wheel**, select the active campaign, and click **Spin with ticket**. The customer wheel submits an entry; it does not select the winner.
 6. Sign out, sign in as `seller`, open **Analytics**, and refresh to see the projected entry.
 7. Open **Lucky wheel**, select the campaign, click **End & freeze snapshot**, then **Spin final draw**.
