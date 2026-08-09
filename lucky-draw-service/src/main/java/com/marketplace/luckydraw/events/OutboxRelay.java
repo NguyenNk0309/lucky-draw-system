@@ -17,16 +17,17 @@ public class OutboxRelay {
 
     @Scheduled(fixedDelayString = "${outbox.poll-ms:500}")
     public void publish() {
-        var events = jdbc.query("SELECT id,event_type,payload FROM outbox WHERE published_at IS NULL ORDER BY created_at LIMIT 100",
-                (rs, n) -> new Event(rs.getString("id"), rs.getString("event_type"), rs.getString("payload")));
+        var events = jdbc.query("SELECT id,aggregate_id,event_type,payload FROM outbox WHERE published_at IS NULL ORDER BY created_at LIMIT 100",
+                (rs, n) -> new Event(rs.getString("id"), rs.getString("aggregate_id"),
+                        rs.getString("event_type"), rs.getString("payload")));
         for (var event : events) {
             try {
-                var record = new ProducerRecord<String, String>("lucky-draw.events", event.id(), event.payload());
+                var record = new ProducerRecord<String, String>("lucky-draw.events", event.aggregateId(), event.payload());
                 record.headers().add("eventType", event.type().getBytes(StandardCharsets.UTF_8));
                 kafka.send(record).get(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS);
                 jdbc.update("UPDATE outbox SET published_at=NOW(6) WHERE id=? AND published_at IS NULL", event.id());
             } catch (Exception exception) { throw new IllegalStateException("Lucky draw outbox publish failed", exception); }
         }
     }
-    private record Event(String id, String type, String payload) {}
+    private record Event(String id, String aggregateId, String type, String payload) {}
 }

@@ -8,6 +8,11 @@ public record Entry(
         String userId,
         String ticketId,
         long sequence,
-        Instant submittedAt
-) {}
-
+        Instant submittedAt,
+        int wheelSegment,
+        boolean rewardPending
+) {
+    public static boolean isRewardSegment(int segment) {
+        return segment == 1 || segment == 5;
+    }
+}

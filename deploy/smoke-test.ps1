@@ -1,5 +1,9 @@
+param([string]$ComposeProject)
+
 $ErrorActionPreference = 'Stop'
 $base = 'http://localhost:8080'
+$compose = @('compose')
+if ($ComposeProject) { $compose += @('-p', $ComposeProject) }
 $customerLogin = Invoke-RestMethod -Method POST -Uri "$base/auth/login" -ContentType 'application/json' -Body (@{ username = 'customer'; password = 'customer123' } | ConvertTo-Json)
 $sellerLogin = Invoke-RestMethod -Method POST -Uri "$base/auth/login" -ContentType 'application/json' -Body (@{ username = 'seller'; password = 'seller123' } | ConvertTo-Json)
 $customer = @{ Authorization = "Bearer $($customerLogin.token)" }
@@ -42,8 +46,10 @@ $tickets = Wait-Until 'three purchase tickets' {
     if ($items.Count -eq 3) { ,$items }
 }
 
-Invoke-Json POST "/api/campaigns/$campaignId/entries" $customer @{ ticketId = $tickets[0].id } | Out-Null
-Invoke-Json POST "/api/campaigns/$campaignId/entries" $customer @{ ticketId = $tickets[1].id } | Out-Null
+$spins = @(
+    Invoke-Json POST "/api/campaigns/$campaignId/entries" $customer @{ ticketId = $tickets[0].id }
+    Invoke-Json POST "/api/campaigns/$campaignId/entries" $customer @{ ticketId = $tickets[1].id }
+)
 try {
     Invoke-Json POST "/api/campaigns/$campaignId/entries" $customer @{ ticketId = $tickets[2].id } | Out-Null
     throw 'Third entry unexpectedly succeeded'
@@ -57,24 +63,38 @@ $stats = Wait-Until 'analytics projection' {
     $value = Invoke-Json GET "/api/analytics/campaigns/$campaignId/stats" $seller
     if ($value.totalEntries -eq 2) { $value }
 }
-Invoke-Json POST "/api/campaigns/$campaignId/end" $seller | Out-Null
-$firstDraw = Invoke-Json POST "/api/campaigns/$campaignId/draw" $seller
-$secondDraw = Invoke-Json POST "/api/campaigns/$campaignId/draw" $seller
-if ($firstDraw.winner.id -ne $secondDraw.winner.id) { throw 'Second draw changed the winner' }
-if ($firstDraw.snapshotHash.Length -ne 64) { throw 'Snapshot hash is missing' }
+
+$winningSpin = @($spins | Where-Object rewardPending)[0]
+if ($null -eq $winningSpin) {
+    $winningSpin = $spins[0]
+    docker @compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE entries SET reward_pending=TRUE,wheel_segment=1 WHERE id='$($winningSpin.id)'" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Could not guarantee a reward outcome for deterministic smoke verification' }
+}
+$expectedRewards = @($spins | Where-Object rewardPending).Count
+if ($expectedRewards -eq 0) { $expectedRewards = 1 }
+
+$closed = Invoke-Json POST "/api/campaigns/$campaignId/end" $seller
+if ($closed.status -ne 'DRAWN') { throw 'Campaign close did not release pending rewards' }
+if ($closed.snapshotHash.Length -ne 64) { throw 'Snapshot hash is missing' }
 
 Wait-Until 'winner reward projection' {
     $mine = Invoke-Json GET "/api/analytics/campaigns/$campaignId/me" $customer
-    if ($mine.won -and $mine.reward.reference -eq 'SMOKE-50') { $mine }
+    if ($mine.won -and $mine.rewardStatus -eq 'DELIVERING' -and $mine.reward.reference -eq 'SMOKE-50') { $mine }
 } | Out-Null
 
-docker compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE outbox SET published_at=NULL WHERE aggregate_id='$campaignId' AND event_type='EntrySubmitted' ORDER BY created_at LIMIT 1" | Out-Null
+docker @compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE outbox SET published_at=NULL WHERE aggregate_id='$campaignId' AND event_type='EntrySubmitted' ORDER BY created_at LIMIT 1" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Could not replay outbox event' }
 Start-Sleep -Seconds 2
 $afterReplay = Invoke-Json GET "/api/analytics/campaigns/$campaignId/stats" $seller
 if ($afterReplay.totalEntries -ne $stats.totalEntries) { throw 'Duplicate event changed analytics counters' }
 
-Wait-Until 'notification' { $items = @((Invoke-Json GET '/api/notifications' $customer) | Where-Object { $_.campaignId -eq $campaignId -and $_.message -match 'SMOKE-50' }); if ($items.Count -eq 1) { ,$items } } | Out-Null
-Wait-Until 'reward' { $items = @((Invoke-Json GET '/api/rewards' $customer) | Where-Object { $_.campaignId -eq $campaignId -and $_.reference -eq 'SMOKE-50' }); if ($items.Count -eq 1 -and $items[0].deliveredAt) { ,$items } } | Out-Null
+Wait-Until 'notification' { $items = @((Invoke-Json GET '/api/notifications' $customer) | Where-Object { $_.campaignId -eq $campaignId -and $_.message -match 'SMOKE-50.*being delivered' }); if ($items.Count -eq 1) { ,$items } } | Out-Null
+Wait-Until 'all rewards' { $items = @((Invoke-Json GET '/api/rewards' $customer) | Where-Object { $_.campaignId -eq $campaignId -and $_.reference -eq 'SMOKE-50' }); if ($items.Count -eq $expectedRewards -and @($items | Where-Object { -not $_.deliveredAt }).Count -eq 0) { ,$items } } | Out-Null
 
-Write-Host 'Smoke test passed: gateway auth/routing, campaign service, order tickets, quota, wheel entry, projection, replay dedup, draw idempotency, notification, and reward.'
+docker @compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE outbox SET published_at=NULL WHERE aggregate_id='$campaignId' AND event_type='WinnerPicked' ORDER BY created_at LIMIT 1" | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Could not replay winner event' }
+Start-Sleep -Seconds 2
+$afterWinnerReplay = @((Invoke-Json GET '/api/rewards' $customer) | Where-Object { $_.campaignId -eq $campaignId })
+if ($afterWinnerReplay.Count -ne $expectedRewards) { throw 'Duplicate winner event created another reward' }
+
+Write-Host 'Smoke test passed: gateway auth/routing, campaign service, order tickets, server wheel outcome, quota, pending reward projection, automatic close release, notification, reward, and replay deduplication.'

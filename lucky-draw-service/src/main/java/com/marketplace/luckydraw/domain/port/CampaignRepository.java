@@ -10,5 +10,5 @@ public interface CampaignRepository {
     Optional<Campaign> lockShared(String id);
     Optional<Campaign> lockExclusive(String id);
     boolean end(String id, String sellerId);
-    boolean markDrawn(String id, String winnerEntryId, String snapshotHash);
+    boolean markDrawn(String id, String snapshotHash);
 }

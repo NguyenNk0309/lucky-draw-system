@@ -8,9 +8,9 @@ public record CampaignStats(
         String status,
         long totalEntries,
         long distinctParticipants,
+        long rewardWinners,
         String winnerEntryId,
         String winnerUserId,
         String snapshotHash,
         Instant lastUpdatedAt
 ) {}
-

@@ -23,12 +23,13 @@ public class RewardClaimRepository {
         int first = jdbc.update("INSERT IGNORE INTO processed_events (event_id,consumer_name) VALUES (?,'reward-service')",
                 event.eventId().toString());
         if (first == 0) return Optional.empty();
-        var claim = new RewardClaim(UUID.randomUUID().toString(), event.campaignId(), event.winnerUserId(),
-                event.reward().type().name(), event.reward().reference(), null, null);
+        var claim = new RewardClaim(UUID.randomUUID().toString(), event.campaignId(), event.winnerEntryId(),
+                event.winnerUserId(), event.reward().type().name(), event.reward().reference(), null, null);
         jdbc.update("""
-                INSERT INTO reward_claims (id,campaign_id,winner_user_id,reward_type,reference)
-                VALUES (?,?,?,?,?)
-                """, claim.id(), claim.campaignId(), claim.winnerUserId(), claim.rewardType(), claim.reference());
+                INSERT INTO reward_claims (id,campaign_id,winner_entry_id,winner_user_id,reward_type,reference)
+                VALUES (?,?,?,?,?,?)
+                """, claim.id(), claim.campaignId(), claim.winnerEntryId(), claim.winnerUserId(),
+                claim.rewardType(), claim.reference());
         return Optional.of(claim);
     }
 
@@ -39,9 +40,9 @@ public class RewardClaimRepository {
 
     public List<RewardClaim> findByUser(String userId) {
         return jdbc.query("SELECT * FROM reward_claims WHERE winner_user_id=? ORDER BY created_at DESC", (rs, n) ->
-                new RewardClaim(rs.getString("id"), rs.getString("campaign_id"), rs.getString("winner_user_id"),
-                        rs.getString("reward_type"), rs.getString("reference"), rs.getString("delivery_reference"),
+                new RewardClaim(rs.getString("id"), rs.getString("campaign_id"), rs.getString("winner_entry_id"),
+                        rs.getString("winner_user_id"), rs.getString("reward_type"), rs.getString("reference"),
+                        rs.getString("delivery_reference"),
                         rs.getTimestamp("delivered_at") == null ? null : rs.getTimestamp("delivered_at").toInstant()), userId);
     }
 }
-

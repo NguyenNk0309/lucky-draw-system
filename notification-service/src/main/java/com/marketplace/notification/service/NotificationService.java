@@ -25,8 +25,8 @@ public class NotificationService {
                 event.eventId().toString());
         if (first == 0) return;
         provider.send(new Notification(UUID.randomUUID().toString(), event.campaignId(), event.winnerUserId(),
-                "You won " + event.reward().type() + " reward " + event.reward().reference()
-                        + " in campaign " + event.campaignId(), event.occurredAt()));
+                "Your " + event.reward().type() + " reward " + event.reward().reference()
+                        + " is being delivered.", event.occurredAt()));
     }
 
     public List<Notification> list(String userId) {

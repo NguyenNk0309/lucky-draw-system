@@ -4,26 +4,30 @@ export function LuckyWheel({
   spinning,
   result,
   reward,
+  segment,
 }: {
   spinning: boolean;
   result?: string;
   reward?: string;
+  segment?: number;
 }) {
   const labels = [
-    'ENTRY',
+    'NO PRIZE',
     reward ?? 'LUCKY',
-    'LUCKY',
-    'ENTRY',
-    'ENTRY',
+    'NO PRIZE',
+    'NO PRIZE',
+    'NO PRIZE',
     reward ?? 'LUCKY',
-    'LUCKY',
-    'ENTRY',
+    'NO PRIZE',
+    'NO PRIZE',
   ];
+  const stop = 2160 - ((segment ?? 0) * 45 + 22.5);
   return (
     <div className="wheel-stage" aria-live="polite">
       <div className="wheel-pointer" aria-hidden="true" />
       <div
-        className={`wheel ${spinning ? 'spinning' : ''}`}
+        className={`wheel ${spinning ? 'spinning' : segment === undefined ? '' : 'settled'}`}
+        style={{ '--wheel-stop': `${stop}deg` } as CSSProperties}
         aria-label={
           reward ? `Lucky draw wheel with reward ${reward}` : 'Lucky draw wheel'
         }

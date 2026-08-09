@@ -1,5 +1,6 @@
 package com.marketplace.luckydraw.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -8,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.marketplace.luckydraw.domain.Campaign;
 import com.marketplace.luckydraw.domain.CampaignStatus;
 import com.marketplace.luckydraw.domain.DomainException;
+import com.marketplace.luckydraw.domain.Entry;
 import com.marketplace.luckydraw.domain.Reward;
 import com.marketplace.luckydraw.domain.port.CampaignRepository;
 import com.marketplace.luckydraw.domain.port.EntryRepository;
@@ -42,7 +44,24 @@ class EntryServiceTest {
                 .isInstanceOf(DomainException.class)
                 .hasMessage("Entry quota reached");
         verify(entries, never()).insert(Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
-                Mockito.anyString(), Mockito.any());
+                Mockito.anyString(), Mockito.any(), Mockito.anyInt(), Mockito.anyBoolean());
+    }
+
+    @Test
+    void serverReturnsThePersistedWheelOutcome() {
+        when(campaigns.lockShared("campaign")).thenReturn(Optional.of(openCampaign()));
+        when(tickets.consume(Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString()))
+                .thenReturn(true);
+        when(quota.tryReserve("campaign", "customer", 2)).thenReturn(true);
+        when(entries.insert(Mockito.anyString(), Mockito.eq("campaign"), Mockito.eq("customer"),
+                Mockito.eq("ticket"), Mockito.eq(now), Mockito.anyInt(), Mockito.anyBoolean()))
+                .thenAnswer(call -> new Entry(call.getArgument(0), "campaign", "customer", "ticket", 1, now,
+                        call.getArgument(5), call.getArgument(6)));
+
+        Entry entry = service.submit("customer", "campaign", "ticket", "correlation");
+
+        assertThat(entry.wheelSegment()).isBetween(0, 7);
+        assertThat(entry.rewardPending()).isEqualTo(Entry.isRewardSegment(entry.wheelSegment()));
     }
 
     private Campaign openCampaign() {
@@ -50,4 +69,3 @@ class EntryServiceTest {
                 now.minusSeconds(60), now.plusSeconds(60), new Reward(Reward.Type.COUPON, "C50"), null, null);
     }
 }
-

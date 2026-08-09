@@ -28,9 +28,4 @@ public record Campaign(
     public boolean isOpenAt(Instant now) {
         return status == CampaignStatus.ACTIVE && !now.isBefore(startAt) && now.isBefore(endAt);
     }
-
-    public boolean canDraw() {
-        return status == CampaignStatus.ENDED;
-    }
 }
-

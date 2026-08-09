@@ -453,6 +453,9 @@ code {
 .wheel.spinning {
   animation: wheel-spin 2.5s cubic-bezier(0.12, 0.67, 0.1, 1) forwards;
 }
+.wheel.settled {
+  transform: rotate(var(--wheel-stop));
+}
 .wheel-hub {
   position: absolute;
   z-index: 2;
@@ -489,8 +492,11 @@ code {
   border-top: 1px solid #303b58;
 }
 @keyframes wheel-spin {
+  from {
+    transform: rotate(0deg);
+  }
   to {
-    transform: rotate(2160deg);
+    transform: rotate(var(--wheel-stop));
   }
 }
 @media (max-width: 760px) {

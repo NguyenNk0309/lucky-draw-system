@@ -7,7 +7,7 @@ import { LuckyWheel } from '../components/LuckyWheel';
 import { useResource } from '../hooks/useResource';
 import type {
   Campaign,
-  DrawResult,
+  LuckyEntry,
   MyResult,
   Notification,
   RewardClaim,
@@ -20,16 +20,23 @@ const emptyMine: MyResult = {
   entryIds: [],
   remainingQuota: 0,
   won: false,
+  pendingRewards: 0,
+  releasedRewards: 0,
 };
 const emptyStats: Stats = {
   campaignId: '',
   totalEntries: 0,
   distinctParticipants: 0,
+  rewardWinners: 0,
 };
 
 export function LuckyDrawPage() {
   const { session } = useAuth();
-  return session!.role === 'SELLER' ? <SellerWheel /> : <CustomerWheel />;
+  return session!.role === 'SELLER' ? (
+    <SellerCampaignStatus />
+  ) : (
+    <CustomerWheel />
+  );
 }
 
 function CustomerWheel() {
@@ -56,7 +63,9 @@ function CustomerWheel() {
     ) ?? [];
   const [selection, setSelection] = useState('');
   const selected = selection || visible[0]?.id || '';
+  const [submitting, setSubmitting] = useState(false);
   const [spinning, setSpinning] = useState(false);
+  const [wheelSegment, setWheelSegment] = useState<number>();
   const [wheelMessage, setWheelMessage] = useState('');
   const [error, setError] = useState('');
   const mine = useResource(
@@ -76,48 +85,55 @@ function CustomerWheel() {
   async function spin(ticketId: string) {
     setError('');
     setWheelMessage('');
-    setSpinning(true);
-    const animation = new Promise((resolve) =>
-      window.setTimeout(resolve, 2500),
-    );
+    setSubmitting(true);
+    setSpinning(false);
     try {
-      await Promise.all([
-        api(`/api/campaigns/${selected}/entries`, token, {
+      const entry = await api<LuckyEntry>(
+        `/api/campaigns/${selected}/entries`,
+        token,
+        {
           method: 'POST',
           body: JSON.stringify({ ticketId }),
-        }),
-        animation,
-      ]);
+        },
+      );
+      setWheelSegment(entry.wheelSegment);
+      setSpinning(true);
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
       setWheelMessage(
-        'Entry accepted! Winner will be announced when the campaign ends.',
+        entry.rewardPending
+          ? `🎉 You won ${rewardLabel}! Status: pending until the campaign ends.`
+          : 'No prize this spin. Your entry was recorded.',
       );
       await tickets.refresh();
       window.setTimeout(() => void mine.refresh(), 700);
     } catch (reason) {
-      await animation;
       const failure = reason as ApiError;
       setError(
         failure.code ? `${failure.message} (${failure.code})` : failure.message,
       );
     } finally {
       setSpinning(false);
+      setSubmitting(false);
     }
   }
 
   const result =
-    campaign?.status === 'DRAWN'
-      ? mine.data?.won
-        ? `🎉 You won ${mine.data.reward?.reference ?? campaign.reward.reference}!`
-        : 'Draw completed'
-      : wheelMessage;
+    wheelMessage ||
+    (mine.data?.rewardStatus === 'PENDING'
+      ? `🎉 ${mine.data.reward?.reference} won · pending`
+      : mine.data?.rewardStatus === 'DELIVERING'
+        ? `${mine.data.reward?.reference} is being delivered`
+        : campaign?.status === 'DRAWN'
+          ? 'Campaign completed · no reward'
+          : undefined);
   return (
     <div className="stack">
       <section className="hero">
-        <span className="eyebrow">Customer app · submit entry</span>
-        <h2>Use your purchase ticket to spin.</h2>
+        <span className="eyebrow">Customer app · instant lucky wheel</span>
+        <h2>Spin your ticket for a reward.</h2>
         <p>
-          The spin submits an entry. The secure final winner is chosen later
-          from the frozen snapshot.
+          The server selects the wheel segment. A winning reward stays pending
+          until the campaign ends, then delivery starts automatically.
         </p>
       </section>
       <ErrorNotice message={error || campaigns.error || mine.error} />
@@ -130,6 +146,7 @@ function CustomerWheel() {
               onChange={(event) => {
                 setSelection(event.target.value);
                 setWheelMessage('');
+                setWheelSegment(undefined);
               }}
             >
               <option value="">Select campaign</option>
@@ -144,6 +161,7 @@ function CustomerWheel() {
             spinning={spinning}
             result={result || undefined}
             reward={rewardLabel}
+            segment={wheelSegment}
           />
         </section>
         <section className="card">
@@ -174,7 +192,7 @@ function CustomerWheel() {
             {campaign?.status === 'ACTIVE' &&
               available.map((ticket) => (
                 <button
-                  disabled={spinning}
+                  disabled={submitting || spinning}
                   key={ticket.id}
                   onClick={() => void spin(ticket.id)}
                 >
@@ -194,10 +212,12 @@ function CustomerWheel() {
             <div>
               <strong>
                 {mine.data?.won
-                  ? 'Winner'
+                  ? mine.data.rewardStatus === 'PENDING'
+                    ? 'Reward pending'
+                    : 'Being delivered'
                   : campaign?.status === 'DRAWN'
-                    ? 'Not won'
-                    : 'Pending'}
+                    ? 'No reward'
+                    : 'Ready'}
               </strong>
               <span>Result</span>
             </div>
@@ -229,7 +249,11 @@ function CustomerWheel() {
                 <span>
                   {item.rewardType}: {item.reference}
                 </span>
-                <span>{item.deliveryReference ?? 'Processing'}</span>
+                <span>
+                  {item.deliveryReference
+                    ? `Being delivered · ${item.deliveryReference}`
+                    : 'Preparing delivery'}
+                </span>
               </li>
             ))}
           </ul>
@@ -239,7 +263,7 @@ function CustomerWheel() {
   );
 }
 
-function SellerWheel() {
+function SellerCampaignStatus() {
   const { session } = useAuth();
   const token = session!.token;
   const campaigns = useResource(
@@ -254,8 +278,6 @@ function SellerWheel() {
     ) ?? [];
   const [selection, setSelection] = useState('');
   const selected = selection || owned[0]?.id || '';
-  const [spinning, setSpinning] = useState(false);
-  const [result, setResult] = useState<DrawResult>();
   const [error, setError] = useState('');
   const stats = useResource(
     () =>
@@ -265,64 +287,35 @@ function SellerWheel() {
     [selected, token],
   );
   const campaign = owned.find((item) => item.id === selected);
-  const rewardLabel = campaign
-    ? `${campaign.reward.type}: ${campaign.reward.reference}`
-    : undefined;
 
   async function end() {
     setError('');
     try {
       await api(`/api/campaigns/${selected}/end`, token, { method: 'POST' });
-      await campaigns.refresh();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Request failed');
-    }
-  }
-  async function draw() {
-    setError('');
-    setResult(undefined);
-    setSpinning(true);
-    const animation = new Promise((resolve) =>
-      window.setTimeout(resolve, 2500),
-    );
-    try {
-      const [winner] = await Promise.all([
-        api<DrawResult>(`/api/campaigns/${selected}/draw`, token, {
-          method: 'POST',
-        }),
-        animation,
-      ]);
-      setResult(winner);
       await Promise.all([campaigns.refresh(), stats.refresh()]);
     } catch (reason) {
-      await animation;
-      setError(reason instanceof Error ? reason.message : 'Draw failed');
-    } finally {
-      setSpinning(false);
+      setError(reason instanceof Error ? reason.message : 'Request failed');
     }
   }
 
   return (
     <div className="stack">
       <section className="hero">
-        <span className="eyebrow">Seller portal · final draw</span>
-        <h2>Freeze entries and draw the winner.</h2>
+        <span className="eyebrow">Seller portal · reward release</span>
+        <h2>End the campaign and release pending rewards.</h2>
         <p>
-          The wheel presents the server result selected with secure randomness
-          from the MySQL snapshot.
+          Customers spin their own wheel. When time expires—or you end the
+          campaign—notifications and reward delivery start automatically.
         </p>
       </section>
       <ErrorNotice message={error || campaigns.error || stats.error} />
-      <div className="grid wheel-layout">
-        <section className="card">
+      <section className="card">
+        <div className="row">
           <label>
             Campaign
             <select
               value={selected}
-              onChange={(event) => {
-                setSelection(event.target.value);
-                setResult(undefined);
-              }}
+              onChange={(event) => setSelection(event.target.value)}
             >
               <option value="">Select</option>
               {owned.map((item) => (
@@ -332,59 +325,45 @@ function SellerWheel() {
               ))}
             </select>
           </label>
-          <LuckyWheel
-            spinning={spinning}
-            reward={rewardLabel}
-            result={
-              result
-                ? `Winner: ${result.winner.userId} · ${rewardLabel}`
-                : campaign?.status === 'DRAWN'
-                  ? `Winner: ${stats.data?.winnerUserId ?? 'loading…'}`
-                  : undefined
+          <button
+            className="secondary"
+            onClick={() =>
+              void Promise.all([campaigns.refresh(), stats.refresh()])
             }
-          />
-        </section>
-        <section className="card">
-          <h3>Draw controls</h3>
-          <div className="metrics">
-            <div>
-              <strong>{stats.data?.totalEntries ?? 0}</strong>
-              <span>Entries</span>
-            </div>
-            <div>
-              <strong>{stats.data?.distinctParticipants ?? 0}</strong>
-              <span>Participants</span>
-            </div>
-            <div>
-              <strong>{campaign?.status ?? '—'}</strong>
-              <span>Status</span>
-            </div>
+          >
+            Refresh
+          </button>
+        </div>
+        <div className="metrics">
+          <div>
+            <strong>{stats.data?.totalEntries ?? 0}</strong>
+            <span>Entries</span>
           </div>
-          <div className="actions">
-            {campaign?.status === 'ACTIVE' && (
-              <button onClick={() => void end()}>End & freeze snapshot</button>
-            )}
-            {campaign?.status === 'ENDED' && (
-              <button disabled={spinning} onClick={() => void draw()}>
-                Spin final draw
-              </button>
-            )}
-            {campaign?.status === 'DRAWN' && (
-              <button disabled={spinning} onClick={() => void draw()}>
-                Replay recorded result
-              </button>
-            )}
+          <div>
+            <strong>{stats.data?.rewardWinners ?? 0}</strong>
+            <span>Reward winners</span>
           </div>
-          {result && (
-            <div className="draw-audit">
-              <p>Selected entry: #{result.selectedIndex}</p>
-              <p>
-                Snapshot: <code>{result.snapshotHash}</code>
-              </p>
-            </div>
+          <div>
+            <strong>{campaign?.status ?? '—'}</strong>
+            <span>Status</span>
+          </div>
+        </div>
+        <div className="actions">
+          {campaign && ['ACTIVE', 'ENDED'].includes(campaign.status) && (
+            <button onClick={() => void end()}>
+              {campaign.status === 'ENDED'
+                ? 'Release pending rewards'
+                : 'End campaign & release rewards'}
+            </button>
           )}
-        </section>
-      </div>
+        </div>
+        {campaign?.status === 'DRAWN' && (
+          <p className="notice success">
+            Campaign completed. Winning customers are being notified and their
+            rewards are being delivered.
+          </p>
+        )}
+      </section>
     </div>
   );
 }

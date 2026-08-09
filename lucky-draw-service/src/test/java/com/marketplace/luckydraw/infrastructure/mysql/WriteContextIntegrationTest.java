@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.marketplace.luckydraw.domain.DomainException;
 import com.marketplace.luckydraw.service.CampaignLifecycleService;
-import com.marketplace.luckydraw.service.DrawService;
 import com.marketplace.luckydraw.service.EntryService;
 import java.time.Clock;
 import java.time.Instant;
@@ -91,7 +90,7 @@ class WriteContextIntegrationTest {
     }
 
     @Test
-    void ticketIssuanceAndDrawAreIdempotentAndSnapshotIsStable() {
+    void ticketIssuanceAndCampaignCloseReleasePendingRewards() {
         insertCampaign("draw-test", 3);
         repository.issueForOrder("one-order", "customer");
         repository.issueForOrder("one-order", "customer");
@@ -105,16 +104,17 @@ class WriteContextIntegrationTest {
         for (String ticket : tickets) transaction.executeWithoutResult(ignored ->
                 entries.submit("customer", "draw-test", ticket, "test"));
 
-        var campaigns = new CampaignLifecycleService(repository, repository, repository, clock);
+        jdbc.update("UPDATE entries SET reward_pending=FALSE WHERE campaign_id='draw-test'");
+        jdbc.update("UPDATE entries SET reward_pending=TRUE, wheel_segment=1 WHERE campaign_id='draw-test' ORDER BY seq LIMIT 1");
+        var campaigns = new CampaignLifecycleService(repository, repository, repository, repository, clock);
         transaction.executeWithoutResult(ignored -> campaigns.end("draw-test", "seller"));
-        var draw = new DrawService(repository, repository, repository, repository, clock);
-        var first = transaction.execute(ignored -> draw.draw("draw-test", "seller", "first"));
-        var second = transaction.execute(ignored -> draw.draw("draw-test", "seller", "second"));
 
-        assertThat(first.winner().id()).isEqualTo(second.winner().id());
-        assertThat(first.snapshotHash()).hasSize(64).isEqualTo(second.snapshotHash());
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM draw_audit WHERE campaign_id='draw-test'", Integer.class))
-                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT status FROM campaigns WHERE id='draw-test'", String.class))
+                .isEqualTo("DRAWN");
+        assertThat(jdbc.queryForObject("SELECT snapshot_hash FROM campaigns WHERE id='draw-test'", String.class))
+                .hasSize(64);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM draw_snapshot_items WHERE campaign_id='draw-test'", Integer.class))
+                .isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM outbox WHERE event_type='WinnerPicked'", Integer.class))
                 .isEqualTo(1);
     }

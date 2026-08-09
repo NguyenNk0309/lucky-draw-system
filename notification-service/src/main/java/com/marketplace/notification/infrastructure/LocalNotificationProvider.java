@@ -17,7 +17,7 @@ public class LocalNotificationProvider implements NotificationProvider {
 
     @Override
     public void send(Notification notification) {
-        jdbc.update("INSERT INTO notifications (id,campaign_id,user_id,message,sent_at) VALUES (?,?,?,?,?)",
+        jdbc.update("INSERT IGNORE INTO notifications (id,campaign_id,user_id,message,sent_at) VALUES (?,?,?,?,?)",
                 notification.id(), notification.campaignId(), notification.userId(), notification.message(),
                 Timestamp.from(notification.sentAt()));
     }
@@ -29,4 +29,3 @@ public class LocalNotificationProvider implements NotificationProvider {
                         rs.getString("message"), rs.getTimestamp("sent_at").toInstant()), userId);
     }
 }
-

@@ -29,6 +29,7 @@ export interface Stats {
   status?: string;
   totalEntries: number;
   distinctParticipants: number;
+  rewardWinners: number;
   winnerEntryId?: string;
   winnerUserId?: string;
   snapshotHash?: string;
@@ -40,17 +41,21 @@ export interface MyResult {
   remainingQuota: number;
   winnerEntryId?: string;
   won: boolean;
+  pendingRewards: number;
+  releasedRewards: number;
+  rewardStatus?: 'PENDING' | 'DELIVERING';
   reward?: { type: 'PRODUCT' | 'COUPON'; reference: string };
   lastUpdatedAt?: string;
 }
-export interface DrawResult {
-  winner: { id: string; userId: string; sequence: number };
-  snapshotHash: string;
-  selectedIndex: number;
+export interface LuckyEntry {
+  id: string;
+  wheelSegment: number;
+  rewardPending: boolean;
 }
 export interface Notification {
   id: string;
   campaignId: string;
+  winnerEntryId: string;
   message: string;
   sentAt: string;
 }

@@ -32,6 +32,11 @@ public class RedisReadModelRepository implements ReadModelRepository {
             redis.call('SADD', KEYS[3], ARGV[1])
             redis.call('RPUSH', KEYS[4], ARGV[2])
             redis.call('HSET', KEYS[5], 'maxEntries', ARGV[3], 'lastUpdatedAt', ARGV[4])
+            if ARGV[5] == '1' then
+              redis.call('HINCRBY', KEYS[6], 'pendingRewards', 1)
+              redis.call('HSET', KEYS[6], 'rewardType', ARGV[6], 'rewardReference', ARGV[7],
+                'lastUpdatedAt', ARGV[4])
+            end
             return 1
             """);
     private static final DefaultRedisScript<Long> WINNER = script("""
@@ -40,6 +45,12 @@ public class RedisReadModelRepository implements ReadModelRepository {
             redis.call('HSET', KEYS[2], 'winnerEntryId', ARGV[1], 'winnerUserId', ARGV[2],
               'snapshotHash', ARGV[3], 'rewardType', ARGV[4], 'rewardReference', ARGV[5],
               'status', 'DRAWN', 'lastUpdatedAt', ARGV[6])
+            redis.call('HINCRBY', KEYS[2], 'rewardWinners', 1)
+            local pending = tonumber(redis.call('HGET', KEYS[3], 'pendingRewards') or '0')
+            if pending > 0 then redis.call('HINCRBY', KEYS[3], 'pendingRewards', -1) end
+            redis.call('HINCRBY', KEYS[3], 'releasedRewards', 1)
+            redis.call('HSET', KEYS[3], 'rewardType', ARGV[4], 'rewardReference', ARGV[5],
+              'lastUpdatedAt', ARGV[6])
             return 1
             """);
 
@@ -60,14 +71,20 @@ public class RedisReadModelRepository implements ReadModelRepository {
     @Override
     public boolean project(EntrySubmitted event) {
         String root = root(event.campaignId());
+        String rewardType = event.reward() == null ? "" : event.reward().type().name();
+        String rewardReference = event.reward() == null ? "" : event.reward().reference();
         return execute(ENTRY, List.of(processed(event.eventId().toString()), root + ":total",
-                        root + ":participants", root + ":user:" + event.userId() + ":entries", meta(event.campaignId())),
-                event.userId(), event.entryId(), Integer.toString(event.maxEntriesPerUser()), event.occurredAt().toString());
+                        root + ":participants", root + ":user:" + event.userId() + ":entries", meta(event.campaignId()),
+                        userResult(event.campaignId(), event.userId())),
+                event.userId(), event.entryId(), Integer.toString(event.maxEntriesPerUser()),
+                event.occurredAt().toString(), event.rewardPending() ? "1" : "0",
+                rewardType, rewardReference);
     }
 
     @Override
     public boolean project(WinnerPicked event) {
-        return execute(WINNER, List.of(processed(event.eventId().toString()), meta(event.campaignId())),
+        return execute(WINNER, List.of(processed(event.eventId().toString()), meta(event.campaignId()),
+                        userResult(event.campaignId(), event.winnerUserId())),
                 event.winnerEntryId(), event.winnerUserId(), event.snapshotHash(), event.reward().type().name(),
                 event.reward().reference(), event.occurredAt().toString());
     }
@@ -83,6 +100,7 @@ public class RedisReadModelRepository implements ReadModelRepository {
         return new CampaignStats(campaignId, string(values, "name"), string(values, "status"),
                 number(redis.opsForValue().get(root(campaignId) + ":total")),
                 Optional.ofNullable(redis.opsForSet().size(root(campaignId) + ":participants")).orElse(0L),
+                number(string(values, "rewardWinners")),
                 string(values, "winnerEntryId"), string(values, "winnerUserId"), string(values, "snapshotHash"),
                 instant(values, "lastUpdatedAt"));
     }
@@ -93,14 +111,18 @@ public class RedisReadModelRepository implements ReadModelRepository {
         List<String> entries = redis.opsForList().range(root(campaignId) + ":user:" + userId + ":entries", 0, -1);
         if (entries == null) entries = List.of();
         int maximum = (int) number(string(values, "maxEntries"));
-        String winnerUser = string(values, "winnerUserId");
-        boolean won = userId.equals(winnerUser);
-        String rewardType = string(values, "rewardType");
-        String rewardReference = string(values, "rewardReference");
+        Map<Object, Object> result = redis.opsForHash().entries(userResult(campaignId, userId));
+        int pendingRewards = (int) number(string(result, "pendingRewards"));
+        int releasedRewards = (int) number(string(result, "releasedRewards"));
+        boolean won = pendingRewards + releasedRewards > 0;
+        String rewardType = string(result, "rewardType");
+        String rewardReference = string(result, "rewardReference");
         Reward reward = won && rewardType != null && rewardReference != null
                 ? new Reward(Reward.Type.valueOf(rewardType), rewardReference) : null;
         return new MyResult(campaignId, entries, Math.max(0, maximum - entries.size()),
-                string(values, "winnerEntryId"), won, reward, instant(values, "lastUpdatedAt"));
+                string(values, "winnerEntryId"), won, pendingRewards, releasedRewards,
+                pendingRewards > 0 ? "PENDING" : releasedRewards > 0 ? "DELIVERING" : null,
+                reward, instant(values, "lastUpdatedAt"));
     }
 
     private boolean execute(DefaultRedisScript<Long> script, List<String> keys, String... args) {
@@ -109,6 +131,9 @@ public class RedisReadModelRepository implements ReadModelRepository {
 
     private static String root(String id) { return "campaign:" + id; }
     private static String meta(String id) { return root(id) + ":meta"; }
+    private static String userResult(String campaignId, String userId) {
+        return root(campaignId) + ":user:" + userId + ":result";
+    }
     private static String processed(String id) { return "analytics:processed:" + id; }
     private static String string(Map<Object, Object> map, String key) {
         Object value = map.get(key);

@@ -25,10 +25,10 @@ The application starts with no persisted campaigns, orders, tickets, entries, no
 2. Create a campaign: enter a name, duration such as `30`, entry limit such as `2`, reward type, and reward reference. Click **Create draft**, then **Publish**.
 3. Sign out, sign in as `customer`, and open **Shop & orders**.
 4. Buy a product priced above `1,000,000`. Refresh **My tickets** until an `ISSUED` ticket appears.
-5. Open **Lucky wheel**, select the active campaign, and click **Spin with ticket**. The customer wheel submits an entry; it does not select the winner.
-6. Sign out, sign in as `seller`, open **Analytics**, and refresh to see the projected entry.
-7. Open **Lucky wheel**, select the campaign, click **End & freeze snapshot**, then **Spin final draw**.
-8. Sign out, sign in as `customer`, open **Lucky wheel**, and verify the configured reward appears on the wheel, in the winner result, notification, and delivered reward.
+5. Open **Lucky wheel**, select the active campaign, and click **Spin with ticket**. The backend selects one of eight wheel segments. Two segments contain the configured reward; a winning spin immediately shows **pending**.
+6. Repeat purchases/spins if needed. Each ticket can be used once and every spin is persisted as an entry.
+7. Sign out, sign in as `seller`, and open **Lucky wheel**. There is no seller wheel: select the campaign and click **End campaign & release rewards**. Waiting for the configured end time performs the same action automatically.
+8. Sign in as `customer`, open **Lucky wheel**, and click **Refresh result**. **Winner notifications** says the reward is being delivered, and **Rewards** shows its name and delivery reference.
 
 ## Exact diagram mapping
 
@@ -49,7 +49,7 @@ The application starts with no persisted campaigns, orders, tickets, entries, no
 | Notification Service | `notification-service` |
 | Reward Delivery strategies | `reward-service` with Product/Coupon strategies |
 
-Ticket, quota, entry, draw, scheduler, and outbox relay are deliberately combined in the single `lucky-draw-service` module, deployment, and write database. Campaign Service is separate as shown in the diagram, but saves campaign configuration and its outbox event into that same write database. Analytics Read Service and Projector are one deployment around Redis.
+Ticket, quota, entry outcome, campaign closing, scheduler, and outbox relay are deliberately combined in the single `lucky-draw-service` module, deployment, and write database. Campaign Service is separate as shown in the diagram, but saves campaign configuration and its outbox event into that same write database. Analytics Read Service and Projector are one deployment around Redis.
 
 ## URLs
 
@@ -63,15 +63,15 @@ Ticket, quota, entry, draw, scheduler, and outbox relay are deliberately combine
 | Analytics OpenAPI | <http://localhost:18085/swagger-ui.html> |
 | MySQL / Redis / Kafka | `3307` / `6380` / `19092` |
 
-Login is `POST /auth/login`; use the returned token as `Authorization: Bearer <token>`. Main gateway routes are `GET|POST /api/orders`, `GET /api/tickets`, `GET|POST /api/campaigns`, campaign `activate|cancel|end|entries|draw`, analytics `stats|me`, notifications, and rewards.
+Login is `POST /auth/login`; use the returned token as `Authorization: Bearer <token>`. Main gateway routes are `GET|POST /api/orders`, `GET /api/tickets`, `GET|POST /api/campaigns`, campaign `activate|cancel|end|entries`, analytics `stats|me`, notifications, and rewards.
 
 ## Correctness
 
 Order creation commits order and `OrderCompleted` outbox row together. It never calls Lucky Draw synchronously. Ticket issuing is idempotent by unique order ID.
 
-Entry submission is one local transaction: `SELECT campaign FOR SHARE`, atomically consume ticket, reserve campaign/user quota, insert entry, append `EntrySubmitted`, commit. Redis is updated only by Kafka projection. Closing takes the exclusive campaign lock and freezes ordered snapshot items. Draw uses `SecureRandom`, records selected index and SHA-256 snapshot hash, moves `ENDED → DRAWN`, and appends `WinnerPicked` atomically. Repeated draw returns the persisted winner.
+Entry submission is one local transaction: `SELECT campaign FOR SHARE`, atomically consume ticket, reserve campaign/user quota, select the wheel segment with `SecureRandom`, insert the entry and pending outcome, append `EntrySubmitted`, commit. Redis is updated only by Kafka projection. Closing takes the exclusive campaign lock, freezes ordered snapshot items, moves `ACTIVE → ENDED → DRAWN`, and appends one `WinnerPicked` event for every pending winning spin. The scheduler uses the same close flow when time expires.
 
-Analytics, notification, and reward consumers independently deduplicate events. Reward claims are persisted before local Product/Coupon delivery.
+Analytics, notification, and reward consumers independently deduplicate events. Each winning entry has one reward claim, persisted before local Product/Coupon delivery.
 
 ## Verification
 

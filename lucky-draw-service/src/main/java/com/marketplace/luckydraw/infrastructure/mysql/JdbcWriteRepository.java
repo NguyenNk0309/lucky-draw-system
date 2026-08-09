@@ -42,7 +42,8 @@ public class JdbcWriteRepository implements CampaignRepository, TicketRepository
             rs.getString("winner_entry_id"), rs.getString("snapshot_hash"));
     private static final RowMapper<Entry> ENTRY_ROW = (rs, n) -> new Entry(
             rs.getString("id"), rs.getString("campaign_id"), rs.getString("user_id"),
-            rs.getString("ticket_id"), rs.getLong("seq"), rs.getTimestamp("submitted_at").toInstant());
+            rs.getString("ticket_id"), rs.getLong("seq"), rs.getTimestamp("submitted_at").toInstant(),
+            rs.getInt("wheel_segment"), rs.getBoolean("reward_pending"));
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
@@ -79,9 +80,9 @@ public class JdbcWriteRepository implements CampaignRepository, TicketRepository
     }
 
     @Override
-    public boolean markDrawn(String id, String winnerEntryId, String snapshotHash) {
-        return jdbc.update("UPDATE campaigns SET status='DRAWN', winner_entry_id=?, snapshot_hash=? WHERE id=? AND status='ENDED'",
-                winnerEntryId, snapshotHash, id) == 1;
+    public boolean markDrawn(String id, String snapshotHash) {
+        return jdbc.update("UPDATE campaigns SET status='DRAWN', snapshot_hash=? WHERE id=? AND status='ENDED'",
+                snapshotHash, id) == 1;
     }
 
     @Override
@@ -116,44 +117,37 @@ public class JdbcWriteRepository implements CampaignRepository, TicketRepository
     }
 
     @Override
-    public Entry insert(String id, String campaignId, String userId, String ticketId, Instant submittedAt) {
+    public Entry insert(String id, String campaignId, String userId, String ticketId, Instant submittedAt,
+            int wheelSegment, boolean rewardPending) {
         var keys = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement statement = connection.prepareStatement("""
-                    INSERT INTO entries (id, campaign_id, user_id, ticket_id, submitted_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO entries
+                      (id, campaign_id, user_id, ticket_id, submitted_at, wheel_segment, reward_pending)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, Statement.RETURN_GENERATED_KEYS);
             statement.setString(1, id);
             statement.setString(2, campaignId);
             statement.setString(3, userId);
             statement.setString(4, ticketId);
             statement.setTimestamp(5, Timestamp.from(submittedAt));
+            statement.setInt(6, wheelSegment);
+            statement.setBoolean(7, rewardPending);
             return statement;
         }, keys);
-        return new Entry(id, campaignId, userId, ticketId, keys.getKey().longValue(), submittedAt);
+        return new Entry(id, campaignId, userId, ticketId, keys.getKey().longValue(), submittedAt,
+                wheelSegment, rewardPending);
     }
 
     @Override
-    public Optional<Entry> findEntryById(String id) {
-        return one("SELECT * FROM entries WHERE id=?", ENTRY_ROW, id);
-    }
-
-    @Override
-    public Entry findBySnapshotIndex(String campaignId, long index) {
-        return jdbc.queryForObject("""
-                SELECT e.* FROM draw_snapshot_items s JOIN entries e ON e.id=s.entry_id
-                 WHERE s.campaign_id=? AND s.idx=?
-                """, ENTRY_ROW, campaignId, index);
-    }
-
-    @Override
-    public List<Entry> findByCampaign(String campaignId) {
-        return jdbc.query("SELECT * FROM entries WHERE campaign_id=? ORDER BY seq", ENTRY_ROW, campaignId);
+    public List<Entry> findRewardPendingByCampaign(String campaignId) {
+        return jdbc.query("SELECT * FROM entries WHERE campaign_id=? AND reward_pending=TRUE ORDER BY seq",
+                ENTRY_ROW, campaignId);
     }
 
     @Override
     public DrawSnapshot freeze(String campaignId) {
-        var existing = find(campaignId);
+        var existing = findSnapshot(campaignId);
         if (existing.isPresent()) return existing.get();
 
         List<String> ids = jdbc.queryForList(
@@ -169,22 +163,10 @@ public class JdbcWriteRepository implements CampaignRepository, TicketRepository
         return new DrawSnapshot(campaignId, ids.size(), hash, now);
     }
 
-    @Override
-    public Optional<DrawSnapshot> find(String campaignId) {
+    private Optional<DrawSnapshot> findSnapshot(String campaignId) {
         return one("SELECT * FROM draw_snapshots WHERE campaign_id=?", (rs, n) -> new DrawSnapshot(
                 rs.getString("campaign_id"), rs.getLong("total_entries"), rs.getString("content_hash"),
                 rs.getTimestamp("frozen_at").toInstant()), campaignId);
-    }
-
-    @Override
-    public void recordAudit(String campaignId, long selectedIndex, String winnerEntryId, String snapshotHash) {
-        jdbc.update("INSERT INTO draw_audit (campaign_id,selected_index,winner_entry_id,snapshot_hash) VALUES (?,?,?,?)",
-                campaignId, selectedIndex, winnerEntryId, snapshotHash);
-    }
-
-    @Override
-    public long selectedIndex(String campaignId) {
-        return jdbc.queryForObject("SELECT selected_index FROM draw_audit WHERE campaign_id=?", Long.class, campaignId);
     }
 
     @Override
