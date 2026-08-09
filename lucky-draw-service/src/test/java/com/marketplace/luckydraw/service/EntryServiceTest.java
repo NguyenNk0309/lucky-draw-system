@@ -56,7 +56,7 @@ class EntryServiceTest {
         when(entries.insert(Mockito.anyString(), Mockito.eq("campaign"), Mockito.eq("customer"),
                 Mockito.eq("ticket"), Mockito.eq(now), Mockito.anyInt(), Mockito.anyBoolean()))
                 .thenAnswer(call -> new Entry(call.getArgument(0), "campaign", "customer", "ticket", 1, now,
-                        call.getArgument(5), call.getArgument(6)));
+                        call.getArgument(5), call.getArgument(6), false, null));
 
         Entry entry = service.submit("customer", "campaign", "ticket", "correlation");
 

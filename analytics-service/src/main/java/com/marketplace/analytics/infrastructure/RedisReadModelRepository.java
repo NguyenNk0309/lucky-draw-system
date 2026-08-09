@@ -6,6 +6,7 @@ import com.marketplace.analytics.domain.port.ReadModelRepository;
 import com.marketplace.events.CampaignUpdated;
 import com.marketplace.events.EntrySubmitted;
 import com.marketplace.events.Reward;
+import com.marketplace.events.RewardCanceled;
 import com.marketplace.events.WinnerPicked;
 import java.time.Instant;
 import java.util.List;
@@ -53,6 +54,18 @@ public class RedisReadModelRepository implements ReadModelRepository {
               'lastUpdatedAt', ARGV[6])
             return 1
             """);
+    private static final DefaultRedisScript<Long> CANCELED = script("""
+            if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+            redis.call('SET', KEYS[1], '1')
+            redis.call('HINCRBY', KEYS[2], 'canceledRewards', 1)
+            redis.call('HSET', KEYS[2], 'lastUpdatedAt', ARGV[3])
+            local pending = tonumber(redis.call('HGET', KEYS[3], 'pendingRewards') or '0')
+            if pending > 0 then redis.call('HINCRBY', KEYS[3], 'pendingRewards', -1) end
+            redis.call('HINCRBY', KEYS[3], 'canceledRewards', 1)
+            redis.call('HSET', KEYS[3], 'rewardType', ARGV[1], 'rewardReference', ARGV[2],
+              'lastUpdatedAt', ARGV[3])
+            return 1
+            """);
 
     private final StringRedisTemplate redis;
 
@@ -90,6 +103,13 @@ public class RedisReadModelRepository implements ReadModelRepository {
     }
 
     @Override
+    public boolean project(RewardCanceled event) {
+        return execute(CANCELED, List.of(processed(event.eventId().toString()), meta(event.campaignId()),
+                        userResult(event.campaignId(), event.userId())),
+                event.reward().type().name(), event.reward().reference(), event.occurredAt().toString());
+    }
+
+    @Override
     public Optional<String> sellerId(String campaignId) {
         return Optional.ofNullable(redis.opsForHash().get(meta(campaignId), "sellerId")).map(Object::toString);
     }
@@ -101,6 +121,7 @@ public class RedisReadModelRepository implements ReadModelRepository {
                 number(redis.opsForValue().get(root(campaignId) + ":total")),
                 Optional.ofNullable(redis.opsForSet().size(root(campaignId) + ":participants")).orElse(0L),
                 number(string(values, "rewardWinners")),
+                number(string(values, "canceledRewards")),
                 string(values, "winnerEntryId"), string(values, "winnerUserId"), string(values, "snapshotHash"),
                 instant(values, "lastUpdatedAt"));
     }
@@ -114,14 +135,16 @@ public class RedisReadModelRepository implements ReadModelRepository {
         Map<Object, Object> result = redis.opsForHash().entries(userResult(campaignId, userId));
         int pendingRewards = (int) number(string(result, "pendingRewards"));
         int releasedRewards = (int) number(string(result, "releasedRewards"));
-        boolean won = pendingRewards + releasedRewards > 0;
+        int canceledRewards = (int) number(string(result, "canceledRewards"));
+        boolean won = pendingRewards + releasedRewards + canceledRewards > 0;
         String rewardType = string(result, "rewardType");
         String rewardReference = string(result, "rewardReference");
         Reward reward = won && rewardType != null && rewardReference != null
                 ? new Reward(Reward.Type.valueOf(rewardType), rewardReference) : null;
         return new MyResult(campaignId, entries, Math.max(0, maximum - entries.size()),
-                string(values, "winnerEntryId"), won, pendingRewards, releasedRewards,
-                pendingRewards > 0 ? "PENDING" : releasedRewards > 0 ? "DELIVERING" : null,
+                string(values, "winnerEntryId"), won, pendingRewards, releasedRewards, canceledRewards,
+                pendingRewards > 0 ? "PENDING" : releasedRewards > 0 ? "DELIVERING"
+                        : canceledRewards > 0 ? "CANCELED" : null,
                 reward, instant(values, "lastUpdatedAt"));
     }
 

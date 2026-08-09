@@ -1,5 +1,6 @@
 package com.marketplace.notification.service;
 
+import com.marketplace.events.RewardCanceled;
 import com.marketplace.events.WinnerPicked;
 import com.marketplace.notification.domain.Notification;
 import com.marketplace.notification.domain.port.NotificationProvider;
@@ -21,15 +22,29 @@ public class NotificationService {
 
     @Transactional
     public void notifyWinner(WinnerPicked event) {
-        int first = jdbc.update("INSERT IGNORE INTO processed_events (event_id,consumer_name) VALUES (?,'notification-service')",
-                event.eventId().toString());
-        if (first == 0) return;
-        provider.send(new Notification(UUID.randomUUID().toString(), event.campaignId(), event.winnerUserId(),
+        if (!first(event.eventId().toString())) return;
+        provider.send(new Notification(UUID.randomUUID().toString(), event.campaignId(), event.winnerEntryId(),
+                event.winnerUserId(),
                 "Your " + event.reward().type() + " reward " + event.reward().reference()
                         + " is being delivered.", event.occurredAt()));
     }
 
+    @Transactional
+    public void notifyCanceled(RewardCanceled event) {
+        if (!first(event.eventId().toString())) return;
+        provider.send(new Notification(UUID.randomUUID().toString(), event.campaignId(), event.entryId(),
+                event.userId(), "Your " + event.reward().type() + " reward " + event.reward().reference()
+                        + " was canceled. Status: CANCELED.", event.occurredAt()));
+    }
+
     public List<Notification> list(String userId) {
         return provider.findByUser(userId);
+    }
+
+    private boolean first(String eventId) {
+        return jdbc.update("""
+                INSERT IGNORE INTO processed_events (event_id,consumer_name)
+                VALUES (?,'notification-service')
+                """, eventId) == 1;
     }
 }

@@ -17,15 +17,19 @@ public class LocalNotificationProvider implements NotificationProvider {
 
     @Override
     public void send(Notification notification) {
-        jdbc.update("INSERT IGNORE INTO notifications (id,campaign_id,user_id,message,sent_at) VALUES (?,?,?,?,?)",
-                notification.id(), notification.campaignId(), notification.userId(), notification.message(),
+        jdbc.update("""
+                INSERT IGNORE INTO notifications (id,campaign_id,entry_id,user_id,message,sent_at)
+                VALUES (?,?,?,?,?,?)
+                """,
+                notification.id(), notification.campaignId(), notification.entryId(), notification.userId(), notification.message(),
                 Timestamp.from(notification.sentAt()));
     }
 
     @Override
     public List<Notification> findByUser(String userId) {
         return jdbc.query("SELECT * FROM notifications WHERE user_id=? ORDER BY sent_at DESC", (rs, n) ->
-                new Notification(rs.getString("id"), rs.getString("campaign_id"), rs.getString("user_id"),
-                        rs.getString("message"), rs.getTimestamp("sent_at").toInstant()), userId);
+                new Notification(rs.getString("id"), rs.getString("campaign_id"), rs.getString("entry_id"),
+                        rs.getString("user_id"), rs.getString("message"),
+                        rs.getTimestamp("sent_at").toInstant()), userId);
     }
 }

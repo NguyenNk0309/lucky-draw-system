@@ -12,6 +12,7 @@ public record MyResult(
         boolean won,
         int pendingRewards,
         int releasedRewards,
+        int canceledRewards,
         String rewardStatus,
         Reward reward,
         Instant lastUpdatedAt

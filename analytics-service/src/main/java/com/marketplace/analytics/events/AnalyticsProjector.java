@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.marketplace.analytics.domain.port.ReadModelRepository;
 import com.marketplace.events.CampaignUpdated;
 import com.marketplace.events.EntrySubmitted;
+import com.marketplace.events.RewardCanceled;
 import com.marketplace.events.WinnerPicked;
 import java.nio.charset.StandardCharsets;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -27,9 +28,9 @@ public class AnalyticsProjector {
         switch (new String(header.value(), StandardCharsets.UTF_8)) {
             case "CampaignUpdated" -> readModel.project(json.readValue(record.value(), CampaignUpdated.class));
             case "EntrySubmitted" -> readModel.project(json.readValue(record.value(), EntrySubmitted.class));
+            case "RewardCanceled" -> readModel.project(json.readValue(record.value(), RewardCanceled.class));
             case "WinnerPicked" -> readModel.project(json.readValue(record.value(), WinnerPicked.class));
             default -> { }
         }
     }
 }
-

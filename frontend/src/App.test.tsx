@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
@@ -89,6 +89,89 @@ describe('app routing', () => {
 
     expect(await screen.findByText('Reward release')).toBeInTheDocument();
     expect(screen.queryByLabelText(/Lucky draw wheel/)).not.toBeInTheDocument();
+  });
+
+  it('lets a seller select and cancel several pending rewards', async () => {
+    localStorage.setItem(
+      'lucky-draw-session',
+      JSON.stringify({
+        token: 'token',
+        userId: 'seller-1',
+        role: 'SELLER',
+        expiresAt: Date.now() / 1000 + 3600,
+      }),
+    );
+    const request = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      const data = path.endsWith('/api/campaigns')
+        ? [
+            {
+              id: 'campaign-1',
+              sellerId: 'seller-1',
+              name: 'Demo',
+              status: 'ACTIVE',
+              maxEntriesPerUser: 3,
+              startAt: '2026-08-09T00:00:00Z',
+              endAt: '2026-08-10T00:00:00Z',
+              reward: { type: 'COUPON', reference: 'SAVE-50' },
+            },
+          ]
+        : path.endsWith('/rewards/pending')
+          ? [
+              {
+                entryId: 'entry-1',
+                userId: 'customer-1',
+                sequence: 1,
+                wonAt: '2026-08-09T01:00:00Z',
+              },
+              {
+                entryId: 'entry-2',
+                userId: 'customer-1',
+                sequence: 2,
+                wonAt: '2026-08-09T01:01:00Z',
+              },
+            ]
+          : path.endsWith('/rewards/cancel')
+            ? { canceledEntryIds: ['entry-1', 'entry-2'] }
+            : {
+                campaignId: 'campaign-1',
+                totalEntries: 2,
+                distinctParticipants: 1,
+                rewardWinners: 0,
+                canceledRewards: 0,
+              };
+      return Promise.resolve(
+        new Response(JSON.stringify(data), {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', request);
+
+    render(
+      <MemoryRouter initialEntries={['/lucky-draw']}>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    const rewards = await screen.findAllByRole('checkbox');
+    fireEvent.click(rewards[0]);
+    fireEvent.click(rewards[1]);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Cancel selected (2)' }),
+    );
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        '/api/campaigns/campaign-1/rewards/cancel',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ entryIds: ['entry-1', 'entry-2'] }),
+        }),
+      ),
+    );
   });
 });
 

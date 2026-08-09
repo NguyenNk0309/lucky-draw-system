@@ -10,7 +10,9 @@ public record Entry(
         long sequence,
         Instant submittedAt,
         int wheelSegment,
-        boolean rewardPending
+        boolean rewardPending,
+        boolean rewardCanceled,
+        Instant rewardCanceledAt
 ) {
     public static boolean isRewardSegment(int segment) {
         return segment == 1 || segment == 5;

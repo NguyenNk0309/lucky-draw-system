@@ -27,8 +27,10 @@ The application starts with no persisted campaigns, orders, tickets, entries, no
 4. Buy a product priced above `1,000,000`. Refresh **My tickets** until an `ISSUED` ticket appears.
 5. Open **Lucky wheel**, select the active campaign, and click **Spin with ticket**. The backend selects one of eight wheel segments. Two segments contain the configured reward; a winning spin immediately shows **pending**.
 6. Repeat purchases/spins if needed. Each ticket can be used once and every spin is persisted as an entry.
-7. Sign out, sign in as `seller`, and open **Lucky wheel**. There is no seller wheel: select the campaign and click **End campaign & release rewards**. Waiting for the configured end time performs the same action automatically.
-8. Sign in as `customer`, open **Lucky wheel**, and click **Refresh result**. **Winner notifications** says the reward is being delivered, and **Rewards** shows its name and delivery reference.
+7. Sign out, sign in as `seller`, and open **Lucky wheel**. There is no seller wheel. Select one or more items under **Pending customer rewards** and click **Cancel selected** if those prizes must be revoked before the campaign ends.
+8. A canceled prize immediately appears in the customer's **Winner notifications** with status `CANCELED`; it never appears in **Rewards**.
+9. As seller, click **End campaign & release rewards**. Waiting for the configured end time performs the same action automatically. Cancellation is no longer allowed after either close path starts.
+10. Sign in as `customer`, open **Lucky wheel**, and click **Refresh result**. Each remaining prize gets a delivery notification and appears in **Rewards** with its delivery reference.
 
 ## Exact diagram mapping
 
@@ -63,7 +65,7 @@ Ticket, quota, entry outcome, campaign closing, scheduler, and outbox relay are 
 | Analytics OpenAPI | <http://localhost:18085/swagger-ui.html> |
 | MySQL / Redis / Kafka | `3307` / `6380` / `19092` |
 
-Login is `POST /auth/login`; use the returned token as `Authorization: Bearer <token>`. Main gateway routes are `GET|POST /api/orders`, `GET /api/tickets`, `GET|POST /api/campaigns`, campaign `activate|cancel|end|entries`, analytics `stats|me`, notifications, and rewards.
+Login is `POST /auth/login`; use the returned token as `Authorization: Bearer <token>`. Main gateway routes are `GET|POST /api/orders`, `GET /api/tickets`, `GET|POST /api/campaigns`, campaign `activate|cancel|end|entries`, seller reward `pending|cancel`, analytics `stats|me`, notifications, and rewards.
 
 ## Correctness
 
@@ -71,7 +73,9 @@ Order creation commits order and `OrderCompleted` outbox row together. It never 
 
 Entry submission is one local transaction: `SELECT campaign FOR SHARE`, atomically consume ticket, reserve campaign/user quota, select the wheel segment with `SecureRandom`, insert the entry and pending outcome, append `EntrySubmitted`, commit. Redis is updated only by Kafka projection. Closing takes the exclusive campaign lock, freezes ordered snapshot items, moves `ACTIVE → ENDED → DRAWN`, and appends one `WinnerPicked` event for every pending winning spin. The scheduler uses the same close flow when time expires.
 
-Analytics, notification, and reward consumers independently deduplicate events. Each winning entry has one reward claim, persisted before local Product/Coupon delivery.
+Seller reward cancellation and campaign close take the same exclusive campaign lock. Cancellation marks all selected pending entries and appends their `RewardCanceled` events in one transaction. Close emits `WinnerPicked` only for pending entries that were not canceled, so Reward Service never creates or delivers a claim for a canceled prize.
+
+Analytics, notification, and reward consumers independently deduplicate events. `RewardCanceled` projects the customer status and notification per entry; only `WinnerPicked` creates a reward claim, persisted before local Product/Coupon delivery.
 
 ## Verification
 

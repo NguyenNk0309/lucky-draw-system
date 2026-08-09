@@ -1,6 +1,7 @@
 package com.marketplace.notification.events;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.marketplace.events.RewardCanceled;
 import com.marketplace.events.WinnerPicked;
 import com.marketplace.notification.service.NotificationService;
 import java.nio.charset.StandardCharsets;
@@ -21,8 +22,11 @@ public class WinnerPickedListener {
     @KafkaListener(topics = "lucky-draw.events")
     public void handle(ConsumerRecord<String, String> record) throws Exception {
         var header = record.headers().lastHeader("eventType");
-        if (header == null || !"WinnerPicked".equals(new String(header.value(), StandardCharsets.UTF_8))) return;
-        service.notifyWinner(json.readValue(record.value(), WinnerPicked.class));
+        if (header == null) return;
+        switch (new String(header.value(), StandardCharsets.UTF_8)) {
+            case "WinnerPicked" -> service.notifyWinner(json.readValue(record.value(), WinnerPicked.class));
+            case "RewardCanceled" -> service.notifyCanceled(json.readValue(record.value(), RewardCanceled.class));
+            default -> { }
+        }
     }
 }
-

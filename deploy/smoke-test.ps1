@@ -64,22 +64,40 @@ $stats = Wait-Until 'analytics projection' {
     if ($value.totalEntries -eq 2) { $value }
 }
 
-$winningSpin = @($spins | Where-Object rewardPending)[0]
-if ($null -eq $winningSpin) {
-    $winningSpin = $spins[0]
-    docker @compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE entries SET reward_pending=TRUE,wheel_segment=1 WHERE id='$($winningSpin.id)'" | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Could not guarantee a reward outcome for deterministic smoke verification' }
+docker @compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE entries SET reward_pending=TRUE,wheel_segment=1 WHERE id IN ('$($spins[0].id)','$($spins[1].id)')" | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Could not guarantee two reward outcomes for deterministic smoke verification' }
+
+$pending = @((Invoke-Json GET "/api/campaigns/$campaignId/rewards/pending" $seller))
+if ($pending.Count -ne 2) { throw 'Seller could not list pending customer rewards' }
+$canceledEntryId = $spins[0].id
+$deliveredEntryId = $spins[1].id
+$canceled = Invoke-Json POST "/api/campaigns/$campaignId/rewards/cancel" $seller @{ entryIds = @($canceledEntryId) }
+if (@($canceled.canceledEntryIds) -notcontains $canceledEntryId) { throw 'Seller could not cancel selected reward' }
+$pendingAfterCancel = @((Invoke-Json GET "/api/campaigns/$campaignId/rewards/pending" $seller))
+if ($pendingAfterCancel.Count -ne 1 -or $pendingAfterCancel[0].entryId -ne $deliveredEntryId) {
+    throw 'Canceled reward remained pending'
 }
-$expectedRewards = @($spins | Where-Object rewardPending).Count
-if ($expectedRewards -eq 0) { $expectedRewards = 1 }
+
+Wait-Until 'canceled notification' {
+    $items = @((Invoke-Json GET '/api/notifications' $customer) | Where-Object {
+        $_.campaignId -eq $campaignId -and $_.entryId -eq $canceledEntryId -and $_.message -match 'CANCELED'
+    })
+    if ($items.Count -eq 1) { ,$items }
+} | Out-Null
 
 $closed = Invoke-Json POST "/api/campaigns/$campaignId/end" $seller
 if ($closed.status -ne 'DRAWN') { throw 'Campaign close did not release pending rewards' }
 if ($closed.snapshotHash.Length -ne 64) { throw 'Snapshot hash is missing' }
+try {
+    Invoke-Json POST "/api/campaigns/$campaignId/rewards/cancel" $seller @{ entryIds = @($deliveredEntryId) } | Out-Null
+    throw 'Reward cancellation unexpectedly succeeded after campaign close'
+} catch { if ((Get-ErrorBody $_) -notmatch 'REWARD_NOT_CANCELABLE') { throw } }
 
 Wait-Until 'winner reward projection' {
     $mine = Invoke-Json GET "/api/analytics/campaigns/$campaignId/me" $customer
-    if ($mine.won -and $mine.rewardStatus -eq 'DELIVERING' -and $mine.reward.reference -eq 'SMOKE-50') { $mine }
+    if ($mine.won -and $mine.rewardStatus -eq 'DELIVERING' -and
+            $mine.canceledRewards -eq 1 -and $mine.releasedRewards -eq 1 -and
+            $mine.reward.reference -eq 'SMOKE-50') { $mine }
 } | Out-Null
 
 docker @compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE outbox SET published_at=NULL WHERE aggregate_id='$campaignId' AND event_type='EntrySubmitted' ORDER BY created_at LIMIT 1" | Out-Null
@@ -88,13 +106,28 @@ Start-Sleep -Seconds 2
 $afterReplay = Invoke-Json GET "/api/analytics/campaigns/$campaignId/stats" $seller
 if ($afterReplay.totalEntries -ne $stats.totalEntries) { throw 'Duplicate event changed analytics counters' }
 
-Wait-Until 'notification' { $items = @((Invoke-Json GET '/api/notifications' $customer) | Where-Object { $_.campaignId -eq $campaignId -and $_.message -match 'SMOKE-50.*being delivered' }); if ($items.Count -eq 1) { ,$items } } | Out-Null
-Wait-Until 'all rewards' { $items = @((Invoke-Json GET '/api/rewards' $customer) | Where-Object { $_.campaignId -eq $campaignId -and $_.reference -eq 'SMOKE-50' }); if ($items.Count -eq $expectedRewards -and @($items | Where-Object { -not $_.deliveredAt }).Count -eq 0) { ,$items } } | Out-Null
+Wait-Until 'delivery notification' {
+    $items = @((Invoke-Json GET '/api/notifications' $customer) | Where-Object {
+        $_.campaignId -eq $campaignId -and $_.entryId -eq $deliveredEntryId -and
+        $_.message -match 'SMOKE-50.*being delivered'
+    })
+    if ($items.Count -eq 1) { ,$items }
+} | Out-Null
+Wait-Until 'only uncanceled reward delivery' {
+    $items = @((Invoke-Json GET '/api/rewards' $customer) | Where-Object {
+        $_.campaignId -eq $campaignId -and $_.reference -eq 'SMOKE-50'
+    })
+    if ($items.Count -eq 1 -and $items[0].winnerEntryId -eq $deliveredEntryId -and $items[0].deliveredAt) {
+        ,$items
+    }
+} | Out-Null
 
 docker @compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE outbox SET published_at=NULL WHERE aggregate_id='$campaignId' AND event_type='WinnerPicked' ORDER BY created_at LIMIT 1" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Could not replay winner event' }
 Start-Sleep -Seconds 2
 $afterWinnerReplay = @((Invoke-Json GET '/api/rewards' $customer) | Where-Object { $_.campaignId -eq $campaignId })
-if ($afterWinnerReplay.Count -ne $expectedRewards) { throw 'Duplicate winner event created another reward' }
+if ($afterWinnerReplay.Count -ne 1 -or $afterWinnerReplay[0].winnerEntryId -ne $deliveredEntryId) {
+    throw 'Duplicate or canceled winner event created another reward'
+}
 
-Write-Host 'Smoke test passed: gateway auth/routing, campaign service, order tickets, server wheel outcome, quota, pending reward projection, automatic close release, notification, reward, and replay deduplication.'
+Write-Host 'Smoke test passed: pending reward listing, seller multi-cancel API, CANCELED notification, close race guard, uncanceled delivery only, and replay deduplication.'

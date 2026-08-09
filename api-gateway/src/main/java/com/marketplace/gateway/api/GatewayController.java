@@ -67,7 +67,7 @@ public class GatewayController {
         if (path.equals("/api/notifications")) return new Destination(notificationUrl, "/notifications");
         if (path.equals("/api/rewards")) return new Destination(rewardUrl, "/rewards");
         if (path.equals("/api/campaigns") || path.startsWith("/api/campaigns/")) {
-            boolean command = path.matches("/api/campaigns/[^/]+/(entries|draw|end)");
+            boolean command = path.matches("/api/campaigns/[^/]+/(entries|end|rewards/(pending|cancel))");
             return new Destination(command ? luckyDrawUrl : campaignUrl, path.substring(4));
         }
         throw new NotFoundException("No route for " + path);

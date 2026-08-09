@@ -104,9 +104,12 @@ class WriteContextIntegrationTest {
         for (String ticket : tickets) transaction.executeWithoutResult(ignored ->
                 entries.submit("customer", "draw-test", ticket, "test"));
 
-        jdbc.update("UPDATE entries SET reward_pending=FALSE WHERE campaign_id='draw-test'");
-        jdbc.update("UPDATE entries SET reward_pending=TRUE, wheel_segment=1 WHERE campaign_id='draw-test' ORDER BY seq LIMIT 1");
+        jdbc.update("UPDATE entries SET reward_pending=TRUE, wheel_segment=1 WHERE campaign_id='draw-test'");
         var campaigns = new CampaignLifecycleService(repository, repository, repository, repository, clock);
+        String canceledEntry = jdbc.queryForObject(
+                "SELECT id FROM entries WHERE campaign_id='draw-test' ORDER BY seq LIMIT 1", String.class);
+        transaction.executeWithoutResult(ignored ->
+                campaigns.cancelRewards("draw-test", "seller", List.of(canceledEntry), "test"));
         transaction.executeWithoutResult(ignored -> campaigns.end("draw-test", "seller"));
 
         assertThat(jdbc.queryForObject("SELECT status FROM campaigns WHERE id='draw-test'", String.class))
@@ -116,6 +119,8 @@ class WriteContextIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM draw_snapshot_items WHERE campaign_id='draw-test'", Integer.class))
                 .isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM outbox WHERE event_type='WinnerPicked'", Integer.class))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM outbox WHERE event_type='RewardCanceled'", Integer.class))
                 .isEqualTo(1);
     }
 

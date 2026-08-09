@@ -9,6 +9,7 @@ public record CampaignStats(
         long totalEntries,
         long distinctParticipants,
         long rewardWinners,
+        long canceledRewards,
         String winnerEntryId,
         String winnerUserId,
         String snapshotHash,

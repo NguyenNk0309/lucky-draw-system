@@ -10,6 +10,7 @@ import type {
   LuckyEntry,
   MyResult,
   Notification,
+  PendingReward,
   RewardClaim,
   Stats,
   Ticket,
@@ -22,12 +23,14 @@ const emptyMine: MyResult = {
   won: false,
   pendingRewards: 0,
   releasedRewards: 0,
+  canceledRewards: 0,
 };
 const emptyStats: Stats = {
   campaignId: '',
   totalEntries: 0,
   distinctParticipants: 0,
   rewardWinners: 0,
+  canceledRewards: 0,
 };
 
 export function LuckyDrawPage() {
@@ -123,9 +126,11 @@ function CustomerWheel() {
       ? `🎉 ${mine.data.reward?.reference} won · pending`
       : mine.data?.rewardStatus === 'DELIVERING'
         ? `${mine.data.reward?.reference} is being delivered`
-        : campaign?.status === 'DRAWN'
-          ? 'Campaign completed · no reward'
-          : undefined);
+        : mine.data?.rewardStatus === 'CANCELED'
+          ? `${mine.data.reward?.reference} · CANCELED`
+          : campaign?.status === 'DRAWN'
+            ? 'Campaign completed · no reward'
+            : undefined);
   return (
     <div className="stack">
       <section className="hero">
@@ -214,7 +219,9 @@ function CustomerWheel() {
                 {mine.data?.won
                   ? mine.data.rewardStatus === 'PENDING'
                     ? 'Reward pending'
-                    : 'Being delivered'
+                    : mine.data.rewardStatus === 'CANCELED'
+                      ? 'Canceled'
+                      : 'Being delivered'
                   : campaign?.status === 'DRAWN'
                     ? 'No reward'
                     : 'Ready'}
@@ -279,6 +286,9 @@ function SellerCampaignStatus() {
   const [selection, setSelection] = useState('');
   const selected = selection || owned[0]?.id || '';
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [canceling, setCanceling] = useState(false);
+  const [checked, setChecked] = useState<string[]>([]);
   const stats = useResource(
     () =>
       selected
@@ -287,14 +297,50 @@ function SellerCampaignStatus() {
     [selected, token],
   );
   const campaign = owned.find((item) => item.id === selected);
+  const pending = useResource(
+    () =>
+      selected
+        ? api<PendingReward[]>(
+            `/api/campaigns/${selected}/rewards/pending`,
+            token,
+          )
+        : Promise.resolve([]),
+    [selected, token],
+  );
 
   async function end() {
     setError('');
+    setNotice('');
     try {
       await api(`/api/campaigns/${selected}/end`, token, { method: 'POST' });
-      await Promise.all([campaigns.refresh(), stats.refresh()]);
+      await Promise.all([
+        campaigns.refresh(),
+        stats.refresh(),
+        pending.refresh(),
+      ]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Request failed');
+    }
+  }
+
+  async function cancelSelected() {
+    setError('');
+    setNotice('');
+    setCanceling(true);
+    try {
+      await api(`/api/campaigns/${selected}/rewards/cancel`, token, {
+        method: 'POST',
+        body: JSON.stringify({ entryIds: checked }),
+      });
+      setNotice(
+        `${checked.length} pending reward${checked.length === 1 ? '' : 's'} canceled.`,
+      );
+      setChecked([]);
+      await Promise.all([pending.refresh(), stats.refresh()]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Request failed');
+    } finally {
+      setCanceling(false);
     }
   }
 
@@ -308,14 +354,20 @@ function SellerCampaignStatus() {
           campaign—notifications and reward delivery start automatically.
         </p>
       </section>
-      <ErrorNotice message={error || campaigns.error || stats.error} />
+      <ErrorNotice
+        message={error || campaigns.error || stats.error || pending.error}
+      />
       <section className="card">
         <div className="row">
           <label>
             Campaign
             <select
               value={selected}
-              onChange={(event) => setSelection(event.target.value)}
+              onChange={(event) => {
+                setSelection(event.target.value);
+                setChecked([]);
+                setNotice('');
+              }}
             >
               <option value="">Select</option>
               {owned.map((item) => (
@@ -328,7 +380,11 @@ function SellerCampaignStatus() {
           <button
             className="secondary"
             onClick={() =>
-              void Promise.all([campaigns.refresh(), stats.refresh()])
+              void Promise.all([
+                campaigns.refresh(),
+                stats.refresh(),
+                pending.refresh(),
+              ])
             }
           >
             Refresh
@@ -341,13 +397,65 @@ function SellerCampaignStatus() {
           </div>
           <div>
             <strong>{stats.data?.rewardWinners ?? 0}</strong>
-            <span>Reward winners</span>
+            <span>Released rewards</span>
+          </div>
+          <div>
+            <strong>{stats.data?.canceledRewards ?? 0}</strong>
+            <span>Canceled rewards</span>
           </div>
           <div>
             <strong>{campaign?.status ?? '—'}</strong>
             <span>Status</span>
           </div>
         </div>
+        {campaign?.status === 'ACTIVE' && (
+          <div className="pending-rewards">
+            <div className="row">
+              <h3>Pending customer rewards</h3>
+              <span className="pill active">
+                {pending.data?.length ?? 0} pending
+              </span>
+            </div>
+            <Empty show={!pending.loading && !pending.data?.length}>
+              No pending rewards.
+            </Empty>
+            <div className="reward-options">
+              {pending.data?.map((item) => (
+                <label className="reward-option" key={item.entryId}>
+                  <input
+                    type="checkbox"
+                    checked={checked.includes(item.entryId)}
+                    onChange={(event) =>
+                      setChecked((current) =>
+                        event.target.checked
+                          ? [...current, item.entryId]
+                          : current.filter((id) => id !== item.entryId),
+                      )
+                    }
+                  />
+                  <span>
+                    <strong>{campaign.reward.reference}</strong> for{' '}
+                    {item.userId}
+                    <small>
+                      Entry #{item.sequence} ·{' '}
+                      {new Date(item.wonAt).toLocaleString()}
+                    </small>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {!!checked.length && (
+              <button
+                className="danger"
+                disabled={canceling}
+                onClick={() => void cancelSelected()}
+              >
+                Cancel selected ({checked.length})
+              </button>
+            )}
+          </div>
+        )}
+        {notice && <p className="notice success">{notice}</p>}
         <div className="actions">
           {campaign && ['ACTIVE', 'ENDED'].includes(campaign.status) && (
             <button onClick={() => void end()}>

@@ -43,7 +43,9 @@ public class JdbcWriteRepository implements CampaignRepository, TicketRepository
     private static final RowMapper<Entry> ENTRY_ROW = (rs, n) -> new Entry(
             rs.getString("id"), rs.getString("campaign_id"), rs.getString("user_id"),
             rs.getString("ticket_id"), rs.getLong("seq"), rs.getTimestamp("submitted_at").toInstant(),
-            rs.getInt("wheel_segment"), rs.getBoolean("reward_pending"));
+            rs.getInt("wheel_segment"), rs.getBoolean("reward_pending"), rs.getBoolean("reward_cancelled"),
+            rs.getTimestamp("reward_cancelled_at") == null
+                    ? null : rs.getTimestamp("reward_cancelled_at").toInstant());
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
@@ -136,13 +138,25 @@ public class JdbcWriteRepository implements CampaignRepository, TicketRepository
             return statement;
         }, keys);
         return new Entry(id, campaignId, userId, ticketId, keys.getKey().longValue(), submittedAt,
-                wheelSegment, rewardPending);
+                wheelSegment, rewardPending, false, null);
     }
 
     @Override
     public List<Entry> findRewardPendingByCampaign(String campaignId) {
-        return jdbc.query("SELECT * FROM entries WHERE campaign_id=? AND reward_pending=TRUE ORDER BY seq",
+        return jdbc.query("""
+                SELECT * FROM entries
+                 WHERE campaign_id=? AND reward_pending=TRUE AND reward_cancelled=FALSE
+                 ORDER BY seq
+                """,
                 ENTRY_ROW, campaignId);
+    }
+
+    @Override
+    public boolean cancelReward(String campaignId, String entryId, Instant canceledAt) {
+        return jdbc.update("""
+                UPDATE entries SET reward_cancelled=TRUE,reward_cancelled_at=?
+                 WHERE campaign_id=? AND id=? AND reward_pending=TRUE AND reward_cancelled=FALSE
+                """, Timestamp.from(canceledAt), campaignId, entryId) == 1;
     }
 
     @Override
