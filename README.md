@@ -28,7 +28,7 @@ The application starts with no persisted campaigns, orders, tickets, entries, no
 5. Open **Lucky wheel**, select the active campaign, and click **Spin with ticket**. The customer wheel submits an entry; it does not select the winner.
 6. Sign out, sign in as `seller`, open **Analytics**, and refresh to see the projected entry.
 7. Open **Lucky wheel**, select the campaign, click **End & freeze snapshot**, then **Spin final draw**.
-8. Sign out, sign in as `customer`, open **Lucky wheel**, and verify the result, winner notification, and reward.
+8. Sign out, sign in as `customer`, open **Lucky wheel**, and verify the configured reward appears on the wheel, in the winner result, notification, and delivered reward.
 
 ## Exact diagram mapping
 

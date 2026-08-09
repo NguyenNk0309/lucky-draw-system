@@ -399,6 +399,7 @@ code {
   padding: 2rem 0 0.5rem;
 }
 .wheel {
+  position: relative;
   width: min(20rem, 74vw);
   aspect-ratio: 1;
   display: grid;
@@ -419,6 +420,29 @@ code {
     0 0 0 0.35rem #6f5720,
     0 22px 50px #0008;
 }
+.wheel-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.wheel-label {
+  --angle: calc(var(--segment) * 45deg + 22.5deg);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5.2rem;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 1.05;
+  text-align: center;
+  text-shadow: 0 1px 3px #000b;
+  overflow-wrap: anywhere;
+  transform: translate(-50%, -50%) rotate(var(--angle)) translateY(-6.2rem);
+}
+.wheel-label.prize {
+  color: #fff5b5;
+}
 .wheel::before {
   content: '';
   width: 84%;
@@ -431,6 +455,7 @@ code {
 }
 .wheel-hub {
   position: absolute;
+  z-index: 2;
   display: grid;
   place-items: center;
   width: 4.2rem;

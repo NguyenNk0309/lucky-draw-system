@@ -63,13 +63,18 @@ $secondDraw = Invoke-Json POST "/api/campaigns/$campaignId/draw" $seller
 if ($firstDraw.winner.id -ne $secondDraw.winner.id) { throw 'Second draw changed the winner' }
 if ($firstDraw.snapshotHash.Length -ne 64) { throw 'Snapshot hash is missing' }
 
+Wait-Until 'winner reward projection' {
+    $mine = Invoke-Json GET "/api/analytics/campaigns/$campaignId/me" $customer
+    if ($mine.won -and $mine.reward.reference -eq 'SMOKE-50') { $mine }
+} | Out-Null
+
 docker compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE outbox SET published_at=NULL WHERE aggregate_id='$campaignId' AND event_type='EntrySubmitted' ORDER BY created_at LIMIT 1" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Could not replay outbox event' }
 Start-Sleep -Seconds 2
 $afterReplay = Invoke-Json GET "/api/analytics/campaigns/$campaignId/stats" $seller
 if ($afterReplay.totalEntries -ne $stats.totalEntries) { throw 'Duplicate event changed analytics counters' }
 
-Wait-Until 'notification' { $items = @((Invoke-Json GET '/api/notifications' $customer) | Where-Object { $_.campaignId -eq $campaignId }); if ($items.Count -eq 1) { ,$items } } | Out-Null
-Wait-Until 'reward' { $items = @((Invoke-Json GET '/api/rewards' $customer) | Where-Object { $_.campaignId -eq $campaignId }); if ($items.Count -eq 1 -and $items[0].deliveredAt) { ,$items } } | Out-Null
+Wait-Until 'notification' { $items = @((Invoke-Json GET '/api/notifications' $customer) | Where-Object { $_.campaignId -eq $campaignId -and $_.message -match 'SMOKE-50' }); if ($items.Count -eq 1) { ,$items } } | Out-Null
+Wait-Until 'reward' { $items = @((Invoke-Json GET '/api/rewards' $customer) | Where-Object { $_.campaignId -eq $campaignId -and $_.reference -eq 'SMOKE-50' }); if ($items.Count -eq 1 -and $items[0].deliveredAt) { ,$items } } | Out-Null
 
 Write-Host 'Smoke test passed: gateway auth/routing, campaign service, order tickets, quota, wheel entry, projection, replay dedup, draw idempotency, notification, and reward.'

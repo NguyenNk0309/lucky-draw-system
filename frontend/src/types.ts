@@ -40,6 +40,7 @@ export interface MyResult {
   remainingQuota: number;
   winnerEntryId?: string;
   won: boolean;
+  reward?: { type: 'PRODUCT' | 'COUPON'; reference: string };
   lastUpdatedAt?: string;
 }
 export interface DrawResult {
@@ -56,6 +57,7 @@ export interface Notification {
 export interface RewardClaim {
   id: string;
   campaignId: string;
+  rewardType: 'PRODUCT' | 'COUPON';
   reference: string;
   deliveryReference?: string;
   deliveredAt?: string;

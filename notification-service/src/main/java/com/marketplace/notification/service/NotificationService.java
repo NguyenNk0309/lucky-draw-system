@@ -25,11 +25,11 @@ public class NotificationService {
                 event.eventId().toString());
         if (first == 0) return;
         provider.send(new Notification(UUID.randomUUID().toString(), event.campaignId(), event.winnerUserId(),
-                "You won campaign " + event.campaignId(), event.occurredAt()));
+                "You won " + event.reward().type() + " reward " + event.reward().reference()
+                        + " in campaign " + event.campaignId(), event.occurredAt()));
     }
 
     public List<Notification> list(String userId) {
         return provider.findByUser(userId);
     }
 }
-

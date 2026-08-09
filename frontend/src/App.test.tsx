@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { AuthProvider } from './auth';
+import { LuckyWheel } from './components/LuckyWheel';
 
 describe('app routing', () => {
   beforeEach(() => {
@@ -55,5 +56,18 @@ describe('app routing', () => {
       await screen.findByText('Noise-cancelling Headphones'),
     ).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Buy now' })).toHaveLength(4);
+  });
+});
+
+describe('lucky wheel', () => {
+  it('writes the configured reward on prize segments', () => {
+    render(
+      <LuckyWheel spinning={false} reward="COUPON: SAVE-50" result="Ready" />,
+    );
+
+    expect(screen.getAllByText('COUPON: SAVE-50')).toHaveLength(2);
+    expect(
+      screen.getByLabelText('Lucky draw wheel with reward COUPON: SAVE-50'),
+    ).toBeInTheDocument();
   });
 });

@@ -67,6 +67,9 @@ function CustomerWheel() {
     [selected, token],
   );
   const campaign = visible.find((item) => item.id === selected);
+  const rewardLabel = campaign
+    ? `${campaign.reward.type}: ${campaign.reward.reference}`
+    : undefined;
   const available =
     tickets.data?.filter((ticket) => ticket.status === 'ISSUED') ?? [];
 
@@ -104,7 +107,7 @@ function CustomerWheel() {
   const result =
     campaign?.status === 'DRAWN'
       ? mine.data?.won
-        ? '🎉 You won!'
+        ? `🎉 You won ${mine.data.reward?.reference ?? campaign.reward.reference}!`
         : 'Draw completed'
       : wheelMessage;
   return (
@@ -137,10 +140,29 @@ function CustomerWheel() {
               ))}
             </select>
           </label>
-          <LuckyWheel spinning={spinning} result={result || undefined} />
+          <LuckyWheel
+            spinning={spinning}
+            result={result || undefined}
+            reward={rewardLabel}
+          />
         </section>
         <section className="card">
-          <h3>{campaign?.name ?? 'Choose a campaign'}</h3>
+          <div className="row">
+            <h3>{campaign?.name ?? 'Choose a campaign'}</h3>
+            <button
+              className="secondary"
+              onClick={() =>
+                void Promise.all([
+                  campaigns.refresh(),
+                  mine.refresh(),
+                  notifications.refresh(),
+                  rewards.refresh(),
+                ])
+              }
+            >
+              Refresh result
+            </button>
+          </div>
           <Loading active={campaigns.loading || tickets.loading} />
           {!tickets.loading && !available.length && (
             <p className="muted">
@@ -204,7 +226,9 @@ function CustomerWheel() {
           <ul className="items">
             {rewards.data?.map((item) => (
               <li key={item.id}>
-                <span>{item.reference}</span>
+                <span>
+                  {item.rewardType}: {item.reference}
+                </span>
                 <span>{item.deliveryReference ?? 'Processing'}</span>
               </li>
             ))}
@@ -241,6 +265,9 @@ function SellerWheel() {
     [selected, token],
   );
   const campaign = owned.find((item) => item.id === selected);
+  const rewardLabel = campaign
+    ? `${campaign.reward.type}: ${campaign.reward.reference}`
+    : undefined;
 
   async function end() {
     setError('');
@@ -307,9 +334,10 @@ function SellerWheel() {
           </label>
           <LuckyWheel
             spinning={spinning}
+            reward={rewardLabel}
             result={
               result
-                ? `Winner: ${result.winner.userId}`
+                ? `Winner: ${result.winner.userId} · ${rewardLabel}`
                 : campaign?.status === 'DRAWN'
                   ? `Winner: ${stats.data?.winnerUserId ?? 'loading…'}`
                   : undefined
