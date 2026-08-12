@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export function useResource<T>(
   loader: () => Promise<T>,
@@ -7,16 +7,22 @@ export function useResource<T>(
   const [data, setData] = useState<T>();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const requestId = useRef(0);
 
   const refresh = useCallback(async () => {
+    const currentRequest = ++requestId.current;
     setLoading(true);
     setError('');
+    setData(undefined);
     try {
-      setData(await loader());
+      const value = await loader();
+      if (currentRequest === requestId.current) setData(value);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Request failed');
+      if (currentRequest === requestId.current) {
+        setError(reason instanceof Error ? reason.message : 'Request failed');
+      }
     } finally {
-      setLoading(false);
+      if (currentRequest === requestId.current) setLoading(false);
     }
     // The caller supplies the stable values that define this request.
     // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/use-memo
@@ -24,6 +30,9 @@ export function useResource<T>(
 
   useEffect(() => {
     void refresh();
+    return () => {
+      requestId.current += 1;
+    };
   }, [refresh]);
 
   return { data, error, loading, refresh };

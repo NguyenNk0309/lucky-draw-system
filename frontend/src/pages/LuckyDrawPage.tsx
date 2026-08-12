@@ -134,6 +134,7 @@ function CustomerEntry() {
             Campaign
             <select
               value={selected}
+              disabled={submitting}
               onChange={(event) => {
                 setSelection(event.target.value);
                 setMessage('');
@@ -262,8 +263,12 @@ function SellerDraw() {
   const [selection, setSelection] = useState('');
   const selected = selection || owned[0]?.id || '';
   const [spinning, setSpinning] = useState(false);
-  const [result, setResult] = useState<DrawResult>();
-  const [customer, setCustomer] = useState<CustomerDetails>();
+  const [results, setResults] = useState<Record<string, DrawResult>>({});
+  const [customers, setCustomers] = useState<Record<string, CustomerDetails>>(
+    {},
+  );
+  const [resultErrors, setResultErrors] = useState<Record<string, string>>({});
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [error, setError] = useState('');
   const stats = useResource(
     () =>
@@ -273,9 +278,40 @@ function SellerDraw() {
     [selected, token],
   );
   const campaign = owned.find((item) => item.id === selected);
+  const result = results[selected];
+  const resultError = resultErrors[selected] ?? '';
+  const customer = customers[selected];
   const rewardLabel = campaign
     ? `${campaign.reward.type}: ${campaign.reward.reference}`
     : undefined;
+
+  useEffect(() => {
+    if (!selected || campaign?.status !== 'DRAWN' || result) return;
+    let active = true;
+    void api<DrawResult>(`/api/campaigns/${selected}/draw`, token, {
+      method: 'POST',
+    })
+      .then((winner) => {
+        if (active) {
+          setResults((current) => ({ ...current, [selected]: winner }));
+          setResultErrors((current) => ({ ...current, [selected]: '' }));
+        }
+      })
+      .catch((reason: unknown) => {
+        if (active) {
+          setResultErrors((current) => ({
+            ...current,
+            [selected]:
+              reason instanceof Error
+                ? reason.message
+                : 'Could not load winner',
+          }));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [campaign?.status, loadAttempt, result, selected, token]);
 
   async function end() {
     setError('');
@@ -288,18 +324,17 @@ function SellerDraw() {
   }
 
   async function draw() {
+    const campaignId = selected;
     setError('');
-    setResult(undefined);
-    setCustomer(undefined);
     setSpinning(true);
     try {
       const [winner] = await Promise.all([
-        api<DrawResult>(`/api/campaigns/${selected}/draw`, token, {
+        api<DrawResult>(`/api/campaigns/${campaignId}/draw`, token, {
           method: 'POST',
         }),
         new Promise((resolve) => window.setTimeout(resolve, 2500)),
       ]);
-      setResult(winner);
+      setResults((current) => ({ ...current, [campaignId]: winner }));
       await Promise.all([campaigns.refresh(), stats.refresh()]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Draw failed');
@@ -310,14 +345,14 @@ function SellerDraw() {
 
   async function viewCustomer() {
     if (!result) return;
+    const campaignId = selected;
     setError('');
     try {
-      setCustomer(
-        await api<CustomerDetails>(
-          `/api/customers/${result.winner.userId}`,
-          token,
-        ),
+      const details = await api<CustomerDetails>(
+        `/api/customers/${result.winner.userId}`,
+        token,
       );
+      setCustomers((current) => ({ ...current, [campaignId]: details }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Request failed');
     }
@@ -333,17 +368,18 @@ function SellerDraw() {
           server-selected winner from that immutable snapshot.
         </p>
       </section>
-      <ErrorNotice message={error || campaigns.error || stats.error} />
+      <ErrorNotice
+        message={error || resultError || campaigns.error || stats.error}
+      />
       <div className="grid wheel-layout">
         <section className="card">
           <label>
             Campaign
             <select
               value={selected}
+              disabled={spinning}
               onChange={(event) => {
                 setSelection(event.target.value);
-                setResult(undefined);
-                setCustomer(undefined);
               }}
             >
               <option value="">Select campaign</option>
@@ -364,7 +400,9 @@ function SellerDraw() {
                 : campaign?.status === 'ENDED'
                   ? 'Ready to pick a winner'
                   : campaign?.status === 'DRAWN'
-                    ? 'Winner already recorded'
+                    ? resultError
+                      ? 'Winner is recorded'
+                      : 'Loading recorded winner...'
                     : undefined
             }
           />
@@ -394,9 +432,17 @@ function SellerDraw() {
                 Spin final draw
               </button>
             )}
-            {campaign?.status === 'DRAWN' && !result && (
-              <button disabled={spinning} onClick={() => void draw()}>
-                Show recorded winner
+            {campaign?.status === 'DRAWN' && resultError && (
+              <button
+                onClick={() => {
+                  setResultErrors((current) => ({
+                    ...current,
+                    [selected]: '',
+                  }));
+                  setLoadAttempt((attempt) => attempt + 1);
+                }}
+              >
+                Retry loading winner
               </button>
             )}
           </div>

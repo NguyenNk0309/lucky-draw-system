@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -10,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { AuthProvider } from './auth';
 import { LuckyWheel } from './components/LuckyWheel';
+import { useResource } from './hooks/useResource';
 
 describe('app routing', () => {
   beforeEach(() => {
@@ -99,6 +101,91 @@ describe('app routing', () => {
       await screen.findByText('Close the campaign, then pick one winner.'),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Lucky draw wheel')).toBeInTheDocument();
+  });
+
+  it('restores a drawn campaign winner without spinning again', async () => {
+    localStorage.setItem(
+      'lucky-draw-session',
+      JSON.stringify({
+        token: 'token',
+        userId: 'seller-1',
+        role: 'SELLER',
+        expiresAt: Date.now() / 1000 + 3600,
+      }),
+    );
+    const campaigns = [
+      {
+        id: 'drawn-campaign',
+        sellerId: 'seller-1',
+        name: 'Finished draw',
+        status: 'DRAWN',
+        maxEntriesPerUser: 2,
+        startAt: '2026-08-01T00:00:00Z',
+        endAt: '2026-08-02T00:00:00Z',
+        reward: { type: 'COUPON', reference: 'SAVE-50' },
+      },
+      {
+        id: 'ended-campaign',
+        sellerId: 'seller-1',
+        name: 'Ready draw',
+        status: 'ENDED',
+        maxEntriesPerUser: 2,
+        startAt: '2026-08-03T00:00:00Z',
+        endAt: '2026-08-04T00:00:00Z',
+        reward: { type: 'PRODUCT', reference: 'HEADPHONES' },
+      },
+    ];
+    const request = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      const data = path.endsWith('/api/campaigns')
+        ? campaigns
+        : path.endsWith('/draw')
+          ? {
+              winner: {
+                id: 'entry-1',
+                userId: 'customer-1',
+                ticketId: 'ticket-1',
+                sequence: 1,
+                submittedAt: '2026-08-01T01:00:00Z',
+              },
+              snapshotHash: 'hash',
+              selectedIndex: 1,
+            }
+          : {
+              campaignId: path.includes('drawn-campaign')
+                ? 'drawn-campaign'
+                : 'ended-campaign',
+              totalEntries: 1,
+              distinctParticipants: 1,
+            };
+      return Promise.resolve(
+        new Response(JSON.stringify(data), {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', request);
+
+    render(
+      <MemoryRouter initialEntries={['/lucky-draw']}>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Winner: customer-1')).toBeInTheDocument();
+    expect(screen.queryByText('Show recorded winner')).not.toBeInTheDocument();
+    const campaignSelect = screen.getByLabelText('Campaign');
+    fireEvent.change(campaignSelect, { target: { value: 'ended-campaign' } });
+    expect(
+      await screen.findByText('Ready to pick a winner'),
+    ).toBeInTheDocument();
+    fireEvent.change(campaignSelect, { target: { value: 'drawn-campaign' } });
+    expect(screen.getByText('Winner: customer-1')).toBeInTheDocument();
+    expect(
+      request.mock.calls.filter(([input]) => String(input).endsWith('/draw')),
+    ).toHaveLength(1);
   });
 
   it('creates a campaign from selected dates', async () => {
@@ -250,6 +337,32 @@ describe('app routing', () => {
         }),
       ),
     );
+  });
+});
+
+describe('resource loading', () => {
+  it('clears old data and ignores stale responses', async () => {
+    const resolvers: Record<string, (value: string) => void> = {};
+    const load = (id: string) =>
+      new Promise<string>((resolve) => {
+        resolvers[id] = resolve;
+      });
+    function Probe({ id }: { id: string }) {
+      const resource = useResource(() => load(id), [id]);
+      return <span>{resource.data ?? 'Loading'}</span>;
+    }
+
+    const view = render(<Probe id="first" />);
+    await act(async () => resolvers.first('First'));
+    expect(screen.getByText('First')).toBeInTheDocument();
+    view.rerender(<Probe id="second" />);
+    expect(screen.getByText('Loading')).toBeInTheDocument();
+    view.rerender(<Probe id="third" />);
+    await act(async () => resolvers.third('Third'));
+    expect(screen.getByText('Third')).toBeInTheDocument();
+    await act(async () => resolvers.second('Second'));
+    expect(screen.getByText('Third')).toBeInTheDocument();
+    expect(screen.queryByText('Second')).not.toBeInTheDocument();
   });
 });
 
