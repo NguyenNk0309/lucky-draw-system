@@ -158,6 +158,9 @@ select {
   background: #0e1526;
   color: white;
 }
+input[type='datetime-local'] {
+  color-scheme: dark;
+}
 .row,
 .actions,
 .ticket-actions {
