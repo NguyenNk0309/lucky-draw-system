@@ -19,10 +19,6 @@ input,
 select {
   font: inherit;
 }
-input[type='checkbox'] {
-  width: auto;
-  accent-color: #f7c948;
-}
 button {
   border: 0;
   border-radius: 0.7rem;
@@ -444,9 +440,6 @@ code {
   overflow-wrap: anywhere;
   transform: translate(-50%, -50%) rotate(var(--angle)) translateY(-6.2rem);
 }
-.wheel-label.prize {
-  color: #fff5b5;
-}
 .wheel::before {
   content: '';
   width: 84%;
@@ -494,32 +487,6 @@ code {
   margin-top: 1.2rem;
   padding-top: 1rem;
   border-top: 1px solid #303b58;
-}
-.pending-rewards {
-  display: grid;
-  gap: 0.8rem;
-  margin: 1.2rem 0;
-  padding-top: 1rem;
-  border-top: 1px solid #303b58;
-}
-.pending-rewards h3 {
-  margin: 0;
-}
-.reward-options {
-  display: grid;
-  gap: 0.55rem;
-}
-.reward-option {
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  padding: 0.75rem;
-  border: 1px solid #303b58;
-  border-radius: 0.7rem;
-  background: #0f1729;
-}
-.reward-option strong,
-.reward-option small {
-  display: block;
 }
 @keyframes wheel-spin {
   from {

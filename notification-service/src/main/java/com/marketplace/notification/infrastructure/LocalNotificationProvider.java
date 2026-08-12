@@ -18,7 +18,7 @@ public class LocalNotificationProvider implements NotificationProvider {
     @Override
     public void send(Notification notification) {
         jdbc.update("""
-                INSERT IGNORE INTO notifications (id,campaign_id,entry_id,user_id,message,sent_at)
+                INSERT INTO notifications (id,campaign_id,entry_id,user_id,message,sent_at)
                 VALUES (?,?,?,?,?,?)
                 """,
                 notification.id(), notification.campaignId(), notification.entryId(), notification.userId(), notification.message(),

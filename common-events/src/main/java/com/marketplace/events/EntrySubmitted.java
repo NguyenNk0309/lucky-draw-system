@@ -13,8 +13,5 @@ public record EntrySubmitted(
         String userId,
         String ticketId,
         long sequence,
-        int maxEntriesPerUser,
-        int wheelSegment,
-        boolean rewardPending,
-        Reward reward
+        int maxEntriesPerUser
 ) {}

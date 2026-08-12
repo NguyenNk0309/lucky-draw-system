@@ -44,24 +44,24 @@ class EntryServiceTest {
                 .isInstanceOf(DomainException.class)
                 .hasMessage("Entry quota reached");
         verify(entries, never()).insert(Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
-                Mockito.anyString(), Mockito.any(), Mockito.anyInt(), Mockito.anyBoolean());
+                Mockito.anyString(), Mockito.any());
     }
 
     @Test
-    void serverReturnsThePersistedWheelOutcome() {
+    void submissionCreatesOneEntrySlot() {
         when(campaigns.lockShared("campaign")).thenReturn(Optional.of(openCampaign()));
         when(tickets.consume(Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString()))
                 .thenReturn(true);
         when(quota.tryReserve("campaign", "customer", 2)).thenReturn(true);
         when(entries.insert(Mockito.anyString(), Mockito.eq("campaign"), Mockito.eq("customer"),
-                Mockito.eq("ticket"), Mockito.eq(now), Mockito.anyInt(), Mockito.anyBoolean()))
-                .thenAnswer(call -> new Entry(call.getArgument(0), "campaign", "customer", "ticket", 1, now,
-                        call.getArgument(5), call.getArgument(6), false, null));
+                Mockito.eq("ticket"), Mockito.eq(now)))
+                .thenAnswer(call -> new Entry(call.getArgument(0), "campaign", "customer", "ticket", 1, now));
 
         Entry entry = service.submit("customer", "campaign", "ticket", "correlation");
 
-        assertThat(entry.wheelSegment()).isBetween(0, 7);
-        assertThat(entry.rewardPending()).isEqualTo(Entry.isRewardSegment(entry.wheelSegment()));
+        assertThat(entry.sequence()).isEqualTo(1);
+        verify(outbox).append(Mockito.anyString(), Mockito.eq("campaign"), Mockito.eq("EntrySubmitted"),
+                Mockito.any());
     }
 
     private Campaign openCampaign() {

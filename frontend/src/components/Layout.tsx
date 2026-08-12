@@ -21,7 +21,7 @@ export function Layout() {
             </>
           )}
           <NavLink to="/lucky-draw">
-            {session.role === 'CUSTOMER' ? 'Lucky wheel' : 'Reward release'}
+            {session.role === 'CUSTOMER' ? 'Submit tickets' : 'Winner draw'}
           </NavLink>
         </nav>
         <div className="identity">
@@ -34,9 +34,7 @@ export function Layout() {
       <main>
         <Outlet />
       </main>
-      <footer>
-        Campaign → order → ticket → wheel outcome → notification → reward
-      </footer>
+      <footer>Order → ticket → entry → winner → notification → reward</footer>
     </>
   );
 }

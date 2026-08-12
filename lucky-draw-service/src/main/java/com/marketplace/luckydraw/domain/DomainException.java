@@ -18,5 +18,6 @@ public class DomainException extends RuntimeException {
     public static DomainException ticketUnusable() { return new DomainException("TICKET_UNUSABLE", "Ticket is invalid or already consumed"); }
     public static DomainException quotaReached() { return new DomainException("ENTRY_QUOTA_REACHED", "Entry quota reached"); }
     public static DomainException invalidTransition() { return new DomainException("INVALID_CAMPAIGN_STATE", "Campaign state transition is not allowed"); }
-    public static DomainException rewardNotCancelable() { return new DomainException("REWARD_NOT_CANCELABLE", "Reward is not pending or campaign is closed"); }
+    public static DomainException notDrawable() { return new DomainException("NOT_DRAWABLE", "Campaign must be ended before drawing"); }
+    public static DomainException noEntries() { return new DomainException("NO_ENTRIES", "Campaign has no entries to draw"); }
 }

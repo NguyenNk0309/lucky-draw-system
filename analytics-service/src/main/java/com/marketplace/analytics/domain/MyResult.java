@@ -10,10 +10,6 @@ public record MyResult(
         int remainingQuota,
         String winnerEntryId,
         boolean won,
-        int pendingRewards,
-        int releasedRewards,
-        int canceledRewards,
-        String rewardStatus,
         Reward reward,
         Instant lastUpdatedAt
 ) {}

@@ -74,7 +74,7 @@ export function ShopPage() {
       <section className="shop-hero">
         <div>
           <span className="eyebrow">Order service</span>
-          <h2>Shop, earn a ticket, spin.</h2>
+          <h2>Shop, earn a ticket, enter.</h2>
           <p>
             Every completed order above 1,000,000 earns one lucky-draw ticket
             asynchronously.
@@ -83,7 +83,7 @@ export function ShopPage() {
         <div className="ticket-badge">
           <strong>{available.length}</strong>
           <span>tickets ready</span>
-          <Link to="/lucky-draw">Open wheel →</Link>
+          <Link to="/lucky-draw">Submit tickets →</Link>
         </div>
       </section>
       <ErrorNotice message={error} />

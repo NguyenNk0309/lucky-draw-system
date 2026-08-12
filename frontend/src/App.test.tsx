@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
@@ -7,8 +13,10 @@ import { LuckyWheel } from './components/LuckyWheel';
 
 describe('app routing', () => {
   beforeEach(() => {
+    cleanup();
     localStorage.clear();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
   it('redirects anonymous customers to login', async () => {
     render(
@@ -58,7 +66,7 @@ describe('app routing', () => {
     expect(screen.getAllByRole('button', { name: 'Buy now' })).toHaveLength(4);
   });
 
-  it('shows reward release controls instead of a seller wheel', async () => {
+  it('shows the final wheel only to the seller', async () => {
     localStorage.setItem(
       'lucky-draw-session',
       JSON.stringify({
@@ -87,8 +95,10 @@ describe('app routing', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('Reward release')).toBeInTheDocument();
-    expect(screen.queryByLabelText(/Lucky draw wheel/)).not.toBeInTheDocument();
+    expect(
+      await screen.findByText('Close the campaign, then pick one winner.'),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Lucky draw wheel')).toBeInTheDocument();
   });
 
   it('creates a campaign from selected dates', async () => {
@@ -153,13 +163,13 @@ describe('app routing', () => {
     );
   });
 
-  it('lets a seller select and cancel several pending rewards', async () => {
+  it('lets a customer submit one ticket without a wheel', async () => {
     localStorage.setItem(
       'lucky-draw-session',
       JSON.stringify({
         token: 'token',
-        userId: 'seller-1',
-        role: 'SELLER',
+        userId: 'customer-1',
+        role: 'CUSTOMER',
         expiresAt: Date.now() / 1000 + 3600,
       }),
     );
@@ -178,30 +188,24 @@ describe('app routing', () => {
               reward: { type: 'COUPON', reference: 'SAVE-50' },
             },
           ]
-        : path.endsWith('/rewards/pending')
-          ? [
-              {
-                entryId: 'entry-1',
+        : path.endsWith('/api/tickets')
+          ? [{ id: 'ticket-1234', orderId: 'order-1', status: 'ISSUED' }]
+          : path.endsWith('/entries')
+            ? {
+                id: 'entry-1',
                 userId: 'customer-1',
+                ticketId: 'ticket-1234',
                 sequence: 1,
-                wonAt: '2026-08-09T01:00:00Z',
-              },
-              {
-                entryId: 'entry-2',
-                userId: 'customer-1',
-                sequence: 2,
-                wonAt: '2026-08-09T01:01:00Z',
-              },
-            ]
-          : path.endsWith('/rewards/cancel')
-            ? { canceledEntryIds: ['entry-1', 'entry-2'] }
-            : {
-                campaignId: 'campaign-1',
-                totalEntries: 2,
-                distinctParticipants: 1,
-                rewardWinners: 0,
-                canceledRewards: 0,
-              };
+                submittedAt: '2026-08-09T01:00:00Z',
+              }
+            : path.includes('/analytics/')
+              ? {
+                  campaignId: 'campaign-1',
+                  entryIds: [],
+                  remainingQuota: 3,
+                  won: false,
+                }
+              : [];
       return Promise.resolve(
         new Response(JSON.stringify(data), {
           headers: { 'Content-Type': 'application/json' },
@@ -209,6 +213,17 @@ describe('app routing', () => {
       );
     });
     vi.stubGlobal('fetch', request);
+    const socketUrls: string[] = [];
+    vi.stubGlobal(
+      'WebSocket',
+      class {
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        constructor(url: string) {
+          socketUrls.push(url);
+        }
+        close() {}
+      },
+    );
 
     render(
       <MemoryRouter initialEntries={['/lucky-draw']}>
@@ -218,19 +233,20 @@ describe('app routing', () => {
       </MemoryRouter>,
     );
 
-    const rewards = await screen.findAllByRole('checkbox');
-    fireEvent.click(rewards[0]);
-    fireEvent.click(rewards[1]);
+    expect(screen.queryByLabelText(/Lucky draw wheel/)).not.toBeInTheDocument();
+    expect(socketUrls).toContain(
+      'ws://localhost:3000/ws/realtime?access_token=token',
+    );
     fireEvent.click(
-      screen.getByRole('button', { name: 'Cancel selected (2)' }),
+      await screen.findByRole('button', { name: 'Submit ticket ticket-1' }),
     );
 
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith(
-        '/api/campaigns/campaign-1/rewards/cancel',
+        '/api/campaigns/campaign-1/entries',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ entryIds: ['entry-1', 'entry-2'] }),
+          body: JSON.stringify({ ticketId: 'ticket-1234' }),
         }),
       ),
     );
@@ -238,14 +254,14 @@ describe('app routing', () => {
 });
 
 describe('lucky wheel', () => {
-  it('writes the configured reward on prize segments', () => {
+  it('shows equal entry slots for the seller draw', () => {
     render(
       <LuckyWheel spinning={false} reward="COUPON: SAVE-50" result="Ready" />,
     );
 
-    expect(screen.getAllByText('COUPON: SAVE-50')).toHaveLength(2);
+    expect(screen.getAllByText('ENTRY')).toHaveLength(8);
     expect(
-      screen.getByLabelText('Lucky draw wheel with reward COUPON: SAVE-50'),
+      screen.getByLabelText('Winner draw wheel for COUPON: SAVE-50'),
     ).toBeInTheDocument();
   });
 
@@ -255,7 +271,7 @@ describe('lucky wheel', () => {
     );
 
     expect(
-      screen.getByLabelText('Lucky draw wheel with reward PRODUCT: HEADPHONES'),
+      screen.getByLabelText('Winner draw wheel for PRODUCT: HEADPHONES'),
     ).toHaveClass('settled');
   });
 });

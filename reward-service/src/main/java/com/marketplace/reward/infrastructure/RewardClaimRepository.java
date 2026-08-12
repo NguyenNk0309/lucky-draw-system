@@ -38,6 +38,15 @@ public class RewardClaimRepository {
                 deliveryReference, claimId);
     }
 
+    public Optional<RewardClaim> findUndeliveredByEntry(String entryId) {
+        return jdbc.query("""
+                SELECT * FROM reward_claims WHERE winner_entry_id=? AND delivered_at IS NULL
+                """, (rs, n) -> new RewardClaim(rs.getString("id"), rs.getString("campaign_id"),
+                        rs.getString("winner_entry_id"), rs.getString("winner_user_id"),
+                        rs.getString("reward_type"), rs.getString("reference"),
+                        rs.getString("delivery_reference"), null), entryId).stream().findFirst();
+    }
+
     public List<RewardClaim> findByUser(String userId) {
         return jdbc.query("SELECT * FROM reward_claims WHERE winner_user_id=? ORDER BY created_at DESC", (rs, n) ->
                 new RewardClaim(rs.getString("id"), rs.getString("campaign_id"), rs.getString("winner_entry_id"),

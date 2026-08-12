@@ -167,6 +167,7 @@ services:
       args: { MODULE: api-gateway }
     environment:
       DEMO_AUTH_SECRET: local-compose-secret-change-in-production
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       ORDER_SERVICE_URL: http://order-service:8081
       CAMPAIGN_SERVICE_URL: http://campaign-service:8083
       LUCKY_DRAW_SERVICE_URL: http://lucky-draw-service:8082
@@ -182,6 +183,7 @@ services:
       analytics-service: { condition: service_healthy }
       notification-service: { condition: service_healthy }
       reward-service: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
     healthcheck:
       <<: *backend-healthcheck
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]

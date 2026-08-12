@@ -9,8 +9,6 @@ const empty: Stats = {
   campaignId: '',
   totalEntries: 0,
   distinctParticipants: 0,
-  rewardWinners: 0,
-  canceledRewards: 0,
 };
 export function AnalyticsPage() {
   const { session } = useAuth();
@@ -75,12 +73,8 @@ export function AnalyticsPage() {
                 <span>Participants</span>
               </div>
               <div>
-                <strong>{stats.data?.rewardWinners ?? 0}</strong>
-                <span>Released rewards</span>
-              </div>
-              <div>
-                <strong>{stats.data?.canceledRewards ?? 0}</strong>
-                <span>Canceled rewards</span>
+                <strong>{stats.data?.winnerUserId ?? '—'}</strong>
+                <span>Winner</span>
               </div>
             </div>
             <p className="muted">

@@ -62,12 +62,13 @@ public class GatewayController {
 
     private Destination destination(String path) {
         if (path.equals("/api/orders") || path.startsWith("/api/orders/")) return new Destination(orderUrl, path.substring(4));
+        if (path.equals("/api/customers") || path.startsWith("/api/customers/")) return new Destination(orderUrl, path.substring(4));
         if (path.equals("/api/tickets") || path.startsWith("/api/tickets/")) return new Destination(luckyDrawUrl, path.substring(4));
         if (path.startsWith("/api/analytics/")) return new Destination(analyticsUrl, path.substring(14));
         if (path.equals("/api/notifications")) return new Destination(notificationUrl, "/notifications");
         if (path.equals("/api/rewards")) return new Destination(rewardUrl, "/rewards");
         if (path.equals("/api/campaigns") || path.startsWith("/api/campaigns/")) {
-            boolean command = path.matches("/api/campaigns/[^/]+/(entries|end|rewards/(pending|cancel))");
+            boolean command = path.matches("/api/campaigns/[^/]+/(entries|end|draw)");
             return new Destination(command ? luckyDrawUrl : campaignUrl, path.substring(4));
         }
         throw new NotFoundException("No route for " + path);

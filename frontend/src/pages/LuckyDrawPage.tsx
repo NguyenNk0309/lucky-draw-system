@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import { useAuth } from '../auth';
@@ -7,10 +7,12 @@ import { LuckyWheel } from '../components/LuckyWheel';
 import { useResource } from '../hooks/useResource';
 import type {
   Campaign,
+  CustomerDetails,
+  DrawResult,
   LuckyEntry,
   MyResult,
   Notification,
-  PendingReward,
+  RealtimeUpdate,
   RewardClaim,
   Stats,
   Ticket,
@@ -21,28 +23,19 @@ const emptyMine: MyResult = {
   entryIds: [],
   remainingQuota: 0,
   won: false,
-  pendingRewards: 0,
-  releasedRewards: 0,
-  canceledRewards: 0,
 };
 const emptyStats: Stats = {
   campaignId: '',
   totalEntries: 0,
   distinctParticipants: 0,
-  rewardWinners: 0,
-  canceledRewards: 0,
 };
 
 export function LuckyDrawPage() {
   const { session } = useAuth();
-  return session!.role === 'SELLER' ? (
-    <SellerCampaignStatus />
-  ) : (
-    <CustomerWheel />
-  );
+  return session!.role === 'SELLER' ? <SellerDraw /> : <CustomerEntry />;
 }
 
-function CustomerWheel() {
+function CustomerEntry() {
   const token = useAuth().session!.token;
   const campaigns = useResource(
     () => api<Campaign[]>('/api/campaigns', token),
@@ -62,14 +55,12 @@ function CustomerWheel() {
   );
   const visible =
     campaigns.data?.filter(
-      (item) => !['DRAFT', 'CANCELLED'].includes(item.status),
+      (campaign) => !['DRAFT', 'CANCELLED'].includes(campaign.status),
     ) ?? [];
   const [selection, setSelection] = useState('');
   const selected = selection || visible[0]?.id || '';
   const [submitting, setSubmitting] = useState(false);
-  const [spinning, setSpinning] = useState(false);
-  const [wheelSegment, setWheelSegment] = useState<number>();
-  const [wheelMessage, setWheelMessage] = useState('');
+  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const mine = useResource(
     () =>
@@ -79,70 +70,65 @@ function CustomerWheel() {
     [selected, token],
   );
   const campaign = visible.find((item) => item.id === selected);
-  const rewardLabel = campaign
-    ? `${campaign.reward.type}: ${campaign.reward.reference}`
-    : undefined;
   const available =
     tickets.data?.filter((ticket) => ticket.status === 'ISSUED') ?? [];
+  const refreshMine = mine.refresh;
+  const refreshNotifications = notifications.refresh;
+  const refreshRewards = rewards.refresh;
 
-  async function spin(ticketId: string) {
+  useEffect(() => {
+    if (typeof WebSocket === 'undefined') return;
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const socket = new WebSocket(
+      `${protocol}://${window.location.host}/ws/realtime?access_token=${encodeURIComponent(token)}`,
+    );
+    socket.onmessage = (event) => {
+      const update = JSON.parse(event.data) as RealtimeUpdate;
+      if (update.type === 'NOTIFICATION') {
+        void refreshNotifications();
+        void refreshMine();
+      }
+      if (update.type === 'REWARD') void refreshRewards();
+    };
+    return () => socket.close();
+  }, [token, refreshMine, refreshNotifications, refreshRewards]);
+
+  async function submit(ticketId: string) {
     setError('');
-    setWheelMessage('');
+    setMessage('');
     setSubmitting(true);
-    setSpinning(false);
     try {
       const entry = await api<LuckyEntry>(
         `/api/campaigns/${selected}/entries`,
         token,
-        {
-          method: 'POST',
-          body: JSON.stringify({ ticketId }),
-        },
+        { method: 'POST', body: JSON.stringify({ ticketId }) },
       );
-      setWheelSegment(entry.wheelSegment);
-      setSpinning(true);
-      await new Promise((resolve) => window.setTimeout(resolve, 2500));
-      setWheelMessage(
-        entry.rewardPending
-          ? `🎉 You won ${rewardLabel}! Status: pending until the campaign ends.`
-          : 'No prize this spin. Your entry was recorded.',
-      );
+      setMessage(`Ticket submitted as entry #${entry.sequence}.`);
       await tickets.refresh();
-      window.setTimeout(() => void mine.refresh(), 700);
+      window.setTimeout(() => void mine.refresh(), 500);
     } catch (reason) {
       const failure = reason as ApiError;
       setError(
         failure.code ? `${failure.message} (${failure.code})` : failure.message,
       );
     } finally {
-      setSpinning(false);
       setSubmitting(false);
     }
   }
 
-  const result =
-    wheelMessage ||
-    (mine.data?.rewardStatus === 'PENDING'
-      ? `🎉 ${mine.data.reward?.reference} won · pending`
-      : mine.data?.rewardStatus === 'DELIVERING'
-        ? `${mine.data.reward?.reference} is being delivered`
-        : mine.data?.rewardStatus === 'CANCELED'
-          ? `${mine.data.reward?.reference} · CANCELED`
-          : campaign?.status === 'DRAWN'
-            ? 'Campaign completed · no reward'
-            : undefined);
   return (
     <div className="stack">
       <section className="hero">
-        <span className="eyebrow">Customer app · instant lucky wheel</span>
-        <h2>Spin your ticket for a reward.</h2>
+        <span className="eyebrow">Customer app · ticket submission</span>
+        <h2>Submit a ticket to a campaign.</h2>
         <p>
-          The server selects the wheel segment. A winning reward stays pending
-          until the campaign ends, then delivery starts automatically.
+          Each ticket creates one draw slot. The seller picks one winner after
+          the campaign closes.
         </p>
       </section>
       <ErrorNotice message={error || campaigns.error || mine.error} />
-      <div className="grid wheel-layout">
+      {message && <p className="notice success">{message}</p>}
+      <div className="grid two">
         <section className="card">
           <label>
             Campaign
@@ -150,8 +136,7 @@ function CustomerWheel() {
               value={selected}
               onChange={(event) => {
                 setSelection(event.target.value);
-                setWheelMessage('');
-                setWheelSegment(undefined);
+                setMessage('');
               }}
             >
               <option value="">Select campaign</option>
@@ -162,12 +147,25 @@ function CustomerWheel() {
               ))}
             </select>
           </label>
-          <LuckyWheel
-            spinning={spinning}
-            result={result || undefined}
-            reward={rewardLabel}
-            segment={wheelSegment}
-          />
+          <Loading active={campaigns.loading || tickets.loading} />
+          {!tickets.loading && !available.length && (
+            <p className="muted">
+              No ticket ready. <Link to="/shop">Buy a qualifying product</Link>,
+              then return here.
+            </p>
+          )}
+          <div className="ticket-actions">
+            {campaign?.status === 'ACTIVE' &&
+              available.map((ticket) => (
+                <button
+                  disabled={submitting}
+                  key={ticket.id}
+                  onClick={() => void submit(ticket.id)}
+                >
+                  Submit ticket {ticket.id.slice(0, 8)}
+                </button>
+              ))}
+          </div>
         </section>
         <section className="card">
           <div className="row">
@@ -183,32 +181,13 @@ function CustomerWheel() {
                 ])
               }
             >
-              Refresh result
+              Refresh
             </button>
-          </div>
-          <Loading active={campaigns.loading || tickets.loading} />
-          {!tickets.loading && !available.length && (
-            <p className="muted">
-              No ticket ready. <Link to="/shop">Buy a qualifying product</Link>,
-              then return here.
-            </p>
-          )}
-          <div className="ticket-actions">
-            {campaign?.status === 'ACTIVE' &&
-              available.map((ticket) => (
-                <button
-                  disabled={submitting || spinning}
-                  key={ticket.id}
-                  onClick={() => void spin(ticket.id)}
-                >
-                  Spin with ticket {ticket.id.slice(0, 8)}
-                </button>
-              ))}
           </div>
           <div className="metrics">
             <div>
               <strong>{mine.data?.entryIds.length ?? 0}</strong>
-              <span>My entries</span>
+              <span>My slots</span>
             </div>
             <div>
               <strong>{mine.data?.remainingQuota ?? '—'}</strong>
@@ -216,19 +195,20 @@ function CustomerWheel() {
             </div>
             <div>
               <strong>
-                {mine.data?.won
-                  ? mine.data.rewardStatus === 'PENDING'
-                    ? 'Reward pending'
-                    : mine.data.rewardStatus === 'CANCELED'
-                      ? 'Canceled'
-                      : 'Being delivered'
-                  : campaign?.status === 'DRAWN'
-                    ? 'No reward'
-                    : 'Ready'}
+                {campaign?.status === 'DRAWN'
+                  ? mine.data?.won
+                    ? 'Winner'
+                    : 'Not selected'
+                  : 'Pending'}
               </strong>
               <span>Result</span>
             </div>
           </div>
+          {mine.data?.won && (
+            <p className="notice success">
+              You won {mine.data.reward?.type} {mine.data.reward?.reference}.
+            </p>
+          )}
           <p className="muted">
             Last projected:{' '}
             {mine.data?.lastUpdatedAt
@@ -239,7 +219,7 @@ function CustomerWheel() {
       </div>
       <div className="grid two">
         <section className="card">
-          <h3>Winner notifications</h3>
+          <h3>Notifications · live</h3>
           <Empty show={!notifications.data?.length}>No notifications.</Empty>
           <ul className="items">
             {notifications.data?.map((item) => (
@@ -248,7 +228,7 @@ function CustomerWheel() {
           </ul>
         </section>
         <section className="card">
-          <h3>Rewards</h3>
+          <h3>Reward delivery · live</h3>
           <Empty show={!rewards.data?.length}>No rewards.</Empty>
           <ul className="items">
             {rewards.data?.map((item) => (
@@ -256,11 +236,7 @@ function CustomerWheel() {
                 <span>
                   {item.rewardType}: {item.reference}
                 </span>
-                <span>
-                  {item.deliveryReference
-                    ? `Being delivered · ${item.deliveryReference}`
-                    : 'Preparing delivery'}
-                </span>
+                <span>{item.deliveryReference ?? 'Preparing delivery'}</span>
               </li>
             ))}
           </ul>
@@ -270,7 +246,7 @@ function CustomerWheel() {
   );
 }
 
-function SellerCampaignStatus() {
+function SellerDraw() {
   const { session } = useAuth();
   const token = session!.token;
   const campaigns = useResource(
@@ -279,16 +255,16 @@ function SellerCampaignStatus() {
   );
   const owned =
     campaigns.data?.filter(
-      (item) =>
-        item.sellerId === session!.userId &&
-        !['DRAFT', 'CANCELLED'].includes(item.status),
+      (campaign) =>
+        campaign.sellerId === session!.userId &&
+        !['DRAFT', 'CANCELLED'].includes(campaign.status),
     ) ?? [];
   const [selection, setSelection] = useState('');
   const selected = selection || owned[0]?.id || '';
+  const [spinning, setSpinning] = useState(false);
+  const [result, setResult] = useState<DrawResult>();
+  const [customer, setCustomer] = useState<CustomerDetails>();
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [canceling, setCanceling] = useState(false);
-  const [checked, setChecked] = useState<string[]>([]);
   const stats = useResource(
     () =>
       selected
@@ -297,79 +273,80 @@ function SellerCampaignStatus() {
     [selected, token],
   );
   const campaign = owned.find((item) => item.id === selected);
-  const pending = useResource(
-    () =>
-      selected
-        ? api<PendingReward[]>(
-            `/api/campaigns/${selected}/rewards/pending`,
-            token,
-          )
-        : Promise.resolve([]),
-    [selected, token],
-  );
+  const rewardLabel = campaign
+    ? `${campaign.reward.type}: ${campaign.reward.reference}`
+    : undefined;
 
   async function end() {
     setError('');
-    setNotice('');
     try {
       await api(`/api/campaigns/${selected}/end`, token, { method: 'POST' });
-      await Promise.all([
-        campaigns.refresh(),
-        stats.refresh(),
-        pending.refresh(),
-      ]);
+      await Promise.all([campaigns.refresh(), stats.refresh()]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Request failed');
     }
   }
 
-  async function cancelSelected() {
+  async function draw() {
     setError('');
-    setNotice('');
-    setCanceling(true);
+    setResult(undefined);
+    setCustomer(undefined);
+    setSpinning(true);
     try {
-      await api(`/api/campaigns/${selected}/rewards/cancel`, token, {
-        method: 'POST',
-        body: JSON.stringify({ entryIds: checked }),
-      });
-      setNotice(
-        `${checked.length} pending reward${checked.length === 1 ? '' : 's'} canceled.`,
+      const [winner] = await Promise.all([
+        api<DrawResult>(`/api/campaigns/${selected}/draw`, token, {
+          method: 'POST',
+        }),
+        new Promise((resolve) => window.setTimeout(resolve, 2500)),
+      ]);
+      setResult(winner);
+      await Promise.all([campaigns.refresh(), stats.refresh()]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Draw failed');
+    } finally {
+      setSpinning(false);
+    }
+  }
+
+  async function viewCustomer() {
+    if (!result) return;
+    setError('');
+    try {
+      setCustomer(
+        await api<CustomerDetails>(
+          `/api/customers/${result.winner.userId}`,
+          token,
+        ),
       );
-      setChecked([]);
-      await Promise.all([pending.refresh(), stats.refresh()]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Request failed');
-    } finally {
-      setCanceling(false);
     }
   }
 
   return (
     <div className="stack">
       <section className="hero">
-        <span className="eyebrow">Seller portal · reward release</span>
-        <h2>End the campaign and release pending rewards.</h2>
+        <span className="eyebrow">Seller portal · final draw</span>
+        <h2>Close the campaign, then pick one winner.</h2>
         <p>
-          Customers spin their own wheel. When time expires—or you end the
-          campaign—notifications and reward delivery start automatically.
+          Closing freezes and hashes every submitted ticket. The wheel uses the
+          server-selected winner from that immutable snapshot.
         </p>
       </section>
-      <ErrorNotice
-        message={error || campaigns.error || stats.error || pending.error}
-      />
-      <section className="card">
-        <div className="row">
+      <ErrorNotice message={error || campaigns.error || stats.error} />
+      <div className="grid wheel-layout">
+        <section className="card">
           <label>
             Campaign
             <select
               value={selected}
               onChange={(event) => {
                 setSelection(event.target.value);
-                setChecked([]);
-                setNotice('');
+                setResult(undefined);
+                setCustomer(undefined);
               }}
             >
-              <option value="">Select</option>
+              <option value="">Select campaign</option>
               {owned.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name} · {item.status}
@@ -377,101 +354,89 @@ function SellerCampaignStatus() {
               ))}
             </select>
           </label>
-          <button
-            className="secondary"
-            onClick={() =>
-              void Promise.all([
-                campaigns.refresh(),
-                stats.refresh(),
-                pending.refresh(),
-              ])
+          <LuckyWheel
+            spinning={spinning}
+            reward={rewardLabel}
+            segment={result ? (result.selectedIndex - 1) % 8 : undefined}
+            result={
+              result
+                ? `Winner: ${result.winner.userId}`
+                : campaign?.status === 'ENDED'
+                  ? 'Ready to pick a winner'
+                  : campaign?.status === 'DRAWN'
+                    ? 'Winner already recorded'
+                    : undefined
             }
-          >
-            Refresh
-          </button>
-        </div>
-        <div className="metrics">
-          <div>
-            <strong>{stats.data?.totalEntries ?? 0}</strong>
-            <span>Entries</span>
-          </div>
-          <div>
-            <strong>{stats.data?.rewardWinners ?? 0}</strong>
-            <span>Released rewards</span>
-          </div>
-          <div>
-            <strong>{stats.data?.canceledRewards ?? 0}</strong>
-            <span>Canceled rewards</span>
-          </div>
-          <div>
-            <strong>{campaign?.status ?? '—'}</strong>
-            <span>Status</span>
-          </div>
-        </div>
-        {campaign?.status === 'ACTIVE' && (
-          <div className="pending-rewards">
-            <div className="row">
-              <h3>Pending customer rewards</h3>
-              <span className="pill active">
-                {pending.data?.length ?? 0} pending
-              </span>
+          />
+        </section>
+        <section className="card">
+          <h3>Draw controls</h3>
+          <div className="metrics">
+            <div>
+              <strong>{stats.data?.totalEntries ?? 0}</strong>
+              <span>Submitted tickets</span>
             </div>
-            <Empty show={!pending.loading && !pending.data?.length}>
-              No pending rewards.
-            </Empty>
-            <div className="reward-options">
-              {pending.data?.map((item) => (
-                <label className="reward-option" key={item.entryId}>
-                  <input
-                    type="checkbox"
-                    checked={checked.includes(item.entryId)}
-                    onChange={(event) =>
-                      setChecked((current) =>
-                        event.target.checked
-                          ? [...current, item.entryId]
-                          : current.filter((id) => id !== item.entryId),
-                      )
-                    }
-                  />
-                  <span>
-                    <strong>{campaign.reward.reference}</strong> for{' '}
-                    {item.userId}
-                    <small>
-                      Entry #{item.sequence} ·{' '}
-                      {new Date(item.wonAt).toLocaleString()}
-                    </small>
-                  </span>
-                </label>
-              ))}
+            <div>
+              <strong>{stats.data?.distinctParticipants ?? 0}</strong>
+              <span>Customers</span>
             </div>
-            {!!checked.length && (
-              <button
-                className="danger"
-                disabled={canceling}
-                onClick={() => void cancelSelected()}
-              >
-                Cancel selected ({checked.length})
+            <div>
+              <strong>{campaign?.status ?? '—'}</strong>
+              <span>Status</span>
+            </div>
+          </div>
+          <div className="actions">
+            {campaign?.status === 'ACTIVE' && (
+              <button onClick={() => void end()}>End & freeze snapshot</button>
+            )}
+            {campaign?.status === 'ENDED' && (
+              <button disabled={spinning} onClick={() => void draw()}>
+                Spin final draw
+              </button>
+            )}
+            {campaign?.status === 'DRAWN' && !result && (
+              <button disabled={spinning} onClick={() => void draw()}>
+                Show recorded winner
               </button>
             )}
           </div>
-        )}
-        {notice && <p className="notice success">{notice}</p>}
-        <div className="actions">
-          {campaign && ['ACTIVE', 'ENDED'].includes(campaign.status) && (
-            <button onClick={() => void end()}>
-              {campaign.status === 'ENDED'
-                ? 'Release pending rewards'
-                : 'End campaign & release rewards'}
-            </button>
+          {result && (
+            <div className="draw-audit">
+              <p>
+                Winner: <strong>{result.winner.userId}</strong>
+              </p>
+              <p>
+                Entry #{result.winner.sequence} · ticket{' '}
+                <code>{result.winner.ticketId}</code>
+              </p>
+              <p>
+                Snapshot: <code>{result.snapshotHash}</code>
+              </p>
+              <button className="secondary" onClick={() => void viewCustomer()}>
+                View winner details
+              </button>
+            </div>
           )}
-        </div>
-        {campaign?.status === 'DRAWN' && (
-          <p className="notice success">
-            Campaign completed. Winning customers are being notified and their
-            rewards are being delivered.
-          </p>
-        )}
-      </section>
+          {customer && (
+            <div className="draw-audit">
+              <h3>Customer details</h3>
+              <p>User: {customer.userId}</p>
+              <p>Orders: {customer.totalOrders}</p>
+              <p>
+                Total spent: ₫{Number(customer.totalSpent).toLocaleString()}
+              </p>
+              <ul className="items">
+                {customer.recentOrders.map((order) => (
+                  <li key={order.id}>
+                    <code>{order.id.slice(0, 8)}</code>
+                    <span>₫{Number(order.total).toLocaleString()}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

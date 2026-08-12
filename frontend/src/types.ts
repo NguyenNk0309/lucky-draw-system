@@ -29,8 +29,6 @@ export interface Stats {
   status?: string;
   totalEntries: number;
   distinctParticipants: number;
-  rewardWinners: number;
-  canceledRewards: number;
   winnerEntryId?: string;
   winnerUserId?: string;
   snapshotHash?: string;
@@ -42,17 +40,20 @@ export interface MyResult {
   remainingQuota: number;
   winnerEntryId?: string;
   won: boolean;
-  pendingRewards: number;
-  releasedRewards: number;
-  canceledRewards: number;
-  rewardStatus?: 'PENDING' | 'DELIVERING' | 'CANCELED';
   reward?: { type: 'PRODUCT' | 'COUPON'; reference: string };
   lastUpdatedAt?: string;
 }
 export interface LuckyEntry {
   id: string;
-  wheelSegment: number;
-  rewardPending: boolean;
+  userId: string;
+  ticketId: string;
+  sequence: number;
+  submittedAt: string;
+}
+export interface DrawResult {
+  winner: LuckyEntry;
+  snapshotHash: string;
+  selectedIndex: number;
 }
 export interface Notification {
   id: string;
@@ -60,12 +61,6 @@ export interface Notification {
   entryId: string;
   message: string;
   sentAt: string;
-}
-export interface PendingReward {
-  entryId: string;
-  userId: string;
-  sequence: number;
-  wonAt: string;
 }
 export interface RewardClaim {
   id: string;
@@ -75,4 +70,14 @@ export interface RewardClaim {
   reference: string;
   deliveryReference?: string;
   deliveredAt?: string;
+}
+export interface CustomerDetails {
+  userId: string;
+  totalOrders: number;
+  totalSpent: number;
+  recentOrders: Order[];
+}
+export interface RealtimeUpdate {
+  userId: string;
+  type: 'NOTIFICATION' | 'REWARD';
 }

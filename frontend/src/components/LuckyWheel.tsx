@@ -11,16 +11,7 @@ export function LuckyWheel({
   reward?: string;
   segment?: number;
 }) {
-  const labels = [
-    'NO PRIZE',
-    reward ?? 'LUCKY',
-    'NO PRIZE',
-    'NO PRIZE',
-    'NO PRIZE',
-    reward ?? 'LUCKY',
-    'NO PRIZE',
-    'NO PRIZE',
-  ];
+  const labels = Array(8).fill('ENTRY');
   const stop = 2160 - ((segment ?? 0) * 45 + 22.5);
   return (
     <div className="wheel-stage" aria-live="polite">
@@ -29,13 +20,13 @@ export function LuckyWheel({
         className={`wheel ${spinning ? 'spinning' : segment === undefined ? '' : 'settled'}`}
         style={{ '--wheel-stop': `${stop}deg` } as CSSProperties}
         aria-label={
-          reward ? `Lucky draw wheel with reward ${reward}` : 'Lucky draw wheel'
+          reward ? `Winner draw wheel for ${reward}` : 'Lucky draw wheel'
         }
       >
         <div className="wheel-labels" aria-hidden="true">
           {labels.map((label, index) => (
             <span
-              className={`wheel-label ${label === reward ? 'prize' : ''}`}
+              className="wheel-label"
               key={`${label}-${index}`}
               style={{ '--segment': index } as CSSProperties}
             >
@@ -46,7 +37,7 @@ export function LuckyWheel({
         <div className="wheel-hub">★</div>
       </div>
       <strong className="wheel-result">
-        {spinning ? 'Spinning…' : (result ?? 'Ready to spin')}
+        {spinning ? 'Spinning…' : (result ?? 'Ready to draw')}
       </strong>
     </div>
   );

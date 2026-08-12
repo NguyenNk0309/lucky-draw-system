@@ -137,7 +137,7 @@ export function CampaignsPage() {
                         void mutate(`/api/campaigns/${campaign.id}/end`)
                       }
                     >
-                      End & release rewards
+                      End & freeze snapshot
                     </button>
                   )}
                   {['DRAFT', 'ACTIVE'].includes(campaign.status) && (

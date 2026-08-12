@@ -8,7 +8,6 @@ import com.marketplace.luckydraw.domain.port.EntryRepository;
 import com.marketplace.luckydraw.domain.port.OutboxRepository;
 import com.marketplace.luckydraw.domain.port.QuotaRepository;
 import com.marketplace.luckydraw.domain.port.TicketRepository;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -19,7 +18,6 @@ import org.springframework.retry.annotation.Retryable;
 
 @Service
 public class EntryService {
-    private static final SecureRandom RANDOM = new SecureRandom();
     private final CampaignRepository campaigns;
     private final TicketRepository tickets;
     private final QuotaRepository quota;
@@ -48,17 +46,10 @@ public class EntryService {
         if (!tickets.consume(ticketId, userId, campaignId, entryId)) throw DomainException.ticketUnusable();
         if (!quota.tryReserve(campaignId, userId, campaign.maxEntriesPerUser())) throw DomainException.quotaReached();
 
-        int wheelSegment = RANDOM.nextInt(8);
-        boolean rewardPending = Entry.isRewardSegment(wheelSegment);
-        var entry = entries.insert(entryId, campaignId, userId, ticketId, clock.instant(),
-                wheelSegment, rewardPending);
+        var entry = entries.insert(entryId, campaignId, userId, ticketId, clock.instant());
         var eventId = UUID.randomUUID();
-        var reward = new com.marketplace.events.Reward(
-                com.marketplace.events.Reward.Type.valueOf(campaign.reward().type().name()),
-                campaign.reward().reference());
         var event = new EntrySubmitted(eventId, clock.instant(), entry.id(), correlationId,
-                entry.id(), campaignId, userId, ticketId, entry.sequence(), campaign.maxEntriesPerUser(),
-                wheelSegment, rewardPending, reward);
+                entry.id(), campaignId, userId, ticketId, entry.sequence(), campaign.maxEntriesPerUser());
         outbox.append(eventId.toString(), campaignId, "EntrySubmitted", event);
         return entry;
     }

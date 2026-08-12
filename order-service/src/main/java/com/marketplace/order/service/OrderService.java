@@ -38,4 +38,12 @@ public class OrderService {
     }
 
     public List<Order> list(String userId) { return orders.findByUser(userId); }
+
+    public CustomerDetails customerDetails(String userId) {
+        var history = orders.findByUser(userId);
+        var total = history.stream().map(Order::total).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new CustomerDetails(userId, history.size(), total, history.stream().limit(10).toList());
+    }
+
+    public record CustomerDetails(String userId, int totalOrders, BigDecimal totalSpent, List<Order> recentOrders) {}
 }

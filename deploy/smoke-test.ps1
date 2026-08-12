@@ -8,6 +8,11 @@ $customerLogin = Invoke-RestMethod -Method POST -Uri "$base/auth/login" -Content
 $sellerLogin = Invoke-RestMethod -Method POST -Uri "$base/auth/login" -ContentType 'application/json' -Body (@{ username = 'seller'; password = 'seller123' } | ConvertTo-Json)
 $customer = @{ Authorization = "Bearer $($customerLogin.token)" }
 $seller = @{ Authorization = "Bearer $($sellerLogin.token)" }
+$socket = [System.Net.WebSockets.ClientWebSocket]::new()
+$socket.ConnectAsync(
+    [Uri]"ws://localhost:8080/ws/realtime?access_token=$([Uri]::EscapeDataString($customerLogin.token))",
+    [Threading.CancellationToken]::None
+).GetAwaiter().GetResult() | Out-Null
 
 function Invoke-Json($method, $path, $headers, $body = $null) {
     $arguments = @{ Method = $method; Uri = "$base$path"; Headers = $headers; ContentType = 'application/json' }
@@ -29,6 +34,20 @@ function Get-ErrorBody($errorRecord) {
     return $errorRecord.Exception.Message
 }
 
+function Wait-Realtime($expectedTypes) {
+    $seen = @{}
+    while (@($expectedTypes | Where-Object { -not $seen[$_] }).Count) {
+        $buffer = [byte[]]::new(4096)
+        $timeout = [Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(10))
+        $received = $socket.ReceiveAsync([ArraySegment[byte]]::new($buffer), $timeout.Token).GetAwaiter().GetResult()
+        if ($received.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) {
+            throw 'Realtime WebSocket closed unexpectedly'
+        }
+        $message = [Text.Encoding]::UTF8.GetString($buffer, 0, $received.Count) | ConvertFrom-Json
+        $seen[$message.type] = $true
+    }
+}
+
 $campaign = Invoke-Json POST '/api/campaigns' $seller @{
     name = "Smoke Draw $(Get-Date -Format s)"
     startAt = (Get-Date).ToUniversalTime().ToString('o')
@@ -46,7 +65,7 @@ $tickets = Wait-Until 'three purchase tickets' {
     if ($items.Count -eq 3) { ,$items }
 }
 
-$spins = @(
+$entries = @(
     Invoke-Json POST "/api/campaigns/$campaignId/entries" $customer @{ ticketId = $tickets[0].id }
     Invoke-Json POST "/api/campaigns/$campaignId/entries" $customer @{ ticketId = $tickets[1].id }
 )
@@ -63,71 +82,75 @@ $stats = Wait-Until 'analytics projection' {
     $value = Invoke-Json GET "/api/analytics/campaigns/$campaignId/stats" $seller
     if ($value.totalEntries -eq 2) { $value }
 }
-
-docker @compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE entries SET reward_pending=TRUE,wheel_segment=1 WHERE id IN ('$($spins[0].id)','$($spins[1].id)')" | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'Could not guarantee two reward outcomes for deterministic smoke verification' }
-
-$pending = @((Invoke-Json GET "/api/campaigns/$campaignId/rewards/pending" $seller))
-if ($pending.Count -ne 2) { throw 'Seller could not list pending customer rewards' }
-$canceledEntryId = $spins[0].id
-$deliveredEntryId = $spins[1].id
-$canceled = Invoke-Json POST "/api/campaigns/$campaignId/rewards/cancel" $seller @{ entryIds = @($canceledEntryId) }
-if (@($canceled.canceledEntryIds) -notcontains $canceledEntryId) { throw 'Seller could not cancel selected reward' }
-$pendingAfterCancel = @((Invoke-Json GET "/api/campaigns/$campaignId/rewards/pending" $seller))
-if ($pendingAfterCancel.Count -ne 1 -or $pendingAfterCancel[0].entryId -ne $deliveredEntryId) {
-    throw 'Canceled reward remained pending'
-}
-
-Wait-Until 'canceled notification' {
+Wait-Until 'entry notifications' {
     $items = @((Invoke-Json GET '/api/notifications' $customer) | Where-Object {
-        $_.campaignId -eq $campaignId -and $_.entryId -eq $canceledEntryId -and $_.message -match 'CANCELED'
+        $_.campaignId -eq $campaignId -and $_.message -match 'Ticket submitted'
     })
-    if ($items.Count -eq 1) { ,$items }
+    if ($items.Count -eq 2) { ,$items }
 } | Out-Null
+Wait-Realtime @('NOTIFICATION')
+Wait-Realtime @('NOTIFICATION')
 
 $closed = Invoke-Json POST "/api/campaigns/$campaignId/end" $seller
-if ($closed.status -ne 'DRAWN') { throw 'Campaign close did not release pending rewards' }
-if ($closed.snapshotHash.Length -ne 64) { throw 'Snapshot hash is missing' }
-try {
-    Invoke-Json POST "/api/campaigns/$campaignId/rewards/cancel" $seller @{ entryIds = @($deliveredEntryId) } | Out-Null
-    throw 'Reward cancellation unexpectedly succeeded after campaign close'
-} catch { if ((Get-ErrorBody $_) -notmatch 'REWARD_NOT_CANCELABLE') { throw } }
+if ($closed.status -ne 'ENDED') { throw 'Campaign did not stop at ENDED' }
+if ($closed.snapshotHash.Length -ne 64) { throw 'Snapshot hash is missing after close' }
 
-Wait-Until 'winner reward projection' {
+$scheduledCampaign = Invoke-Json POST '/api/campaigns' $seller @{
+    name = "Scheduled Smoke $(Get-Date -Format s)"
+    startAt = (Get-Date).ToUniversalTime().ToString('o')
+    endAt = (Get-Date).ToUniversalTime().AddSeconds(5).ToString('o')
+    maxEntriesPerUser = 1
+    rewardType = 'PRODUCT'
+    rewardReference = 'SCHEDULED-SMOKE'
+}
+Invoke-Json POST "/api/campaigns/$($scheduledCampaign.id)/activate" $seller | Out-Null
+$scheduledClosed = Wait-Until 'scheduler campaign close' {
+    $value = Invoke-Json GET "/api/campaigns/$($scheduledCampaign.id)" $seller
+    if ($value.status -eq 'ENDED') { $value }
+}
+if ($scheduledClosed.snapshotHash.Length -ne 64) { throw 'Scheduler did not freeze and hash its snapshot' }
+
+$draw = Invoke-Json POST "/api/campaigns/$campaignId/draw" $seller
+if ($draw.winner.id -notin $entries.id) { throw 'Winner was not selected from submitted tickets' }
+if ($draw.snapshotHash -ne $closed.snapshotHash) { throw 'Draw used a different snapshot' }
+$replayedDraw = Invoke-Json POST "/api/campaigns/$campaignId/draw" $seller
+if ($replayedDraw.winner.id -ne $draw.winner.id -or $replayedDraw.selectedIndex -ne $draw.selectedIndex) {
+    throw 'Repeated draw selected another winner'
+}
+
+$winnerDetails = Invoke-Json GET "/api/customers/$($draw.winner.userId)" $seller
+if ($winnerDetails.userId -ne $draw.winner.userId -or $winnerDetails.totalOrders -lt 3) {
+    throw 'Seller could not inspect winner details'
+}
+
+Wait-Until 'winner projection' {
     $mine = Invoke-Json GET "/api/analytics/campaigns/$campaignId/me" $customer
-    if ($mine.won -and $mine.rewardStatus -eq 'DELIVERING' -and
-            $mine.canceledRewards -eq 1 -and $mine.releasedRewards -eq 1 -and
-            $mine.reward.reference -eq 'SMOKE-50') { $mine }
+    if ($mine.won -and $mine.reward.reference -eq 'SMOKE-50') { $mine }
 } | Out-Null
-
-docker @compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE outbox SET published_at=NULL WHERE aggregate_id='$campaignId' AND event_type='EntrySubmitted' ORDER BY created_at LIMIT 1" | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'Could not replay outbox event' }
-Start-Sleep -Seconds 2
-$afterReplay = Invoke-Json GET "/api/analytics/campaigns/$campaignId/stats" $seller
-if ($afterReplay.totalEntries -ne $stats.totalEntries) { throw 'Duplicate event changed analytics counters' }
-
-Wait-Until 'delivery notification' {
+Wait-Until 'winner notification' {
     $items = @((Invoke-Json GET '/api/notifications' $customer) | Where-Object {
-        $_.campaignId -eq $campaignId -and $_.entryId -eq $deliveredEntryId -and
-        $_.message -match 'SMOKE-50.*being delivered'
+        $_.campaignId -eq $campaignId -and $_.entryId -eq $draw.winner.id -and $_.message -match 'You won'
     })
     if ($items.Count -eq 1) { ,$items }
 } | Out-Null
-Wait-Until 'only uncanceled reward delivery' {
+Wait-Until 'winner reward delivery' {
     $items = @((Invoke-Json GET '/api/rewards' $customer) | Where-Object {
-        $_.campaignId -eq $campaignId -and $_.reference -eq 'SMOKE-50'
+        $_.campaignId -eq $campaignId -and $_.winnerEntryId -eq $draw.winner.id -and $_.deliveredAt
     })
-    if ($items.Count -eq 1 -and $items[0].winnerEntryId -eq $deliveredEntryId -and $items[0].deliveredAt) {
-        ,$items
-    }
+    if ($items.Count -eq 1) { ,$items }
 } | Out-Null
+Wait-Realtime @('NOTIFICATION', 'REWARD')
 
-docker @compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE outbox SET published_at=NULL WHERE aggregate_id='$campaignId' AND event_type='WinnerPicked' ORDER BY created_at LIMIT 1" | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'Could not replay winner event' }
+docker @compose exec -T mysql mysql -ulucky -plucky luckydraw -e "UPDATE outbox SET published_at=NULL WHERE aggregate_id='$campaignId' AND event_type IN ('EntrySubmitted','WinnerPicked')" | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Could not replay outbox events' }
 Start-Sleep -Seconds 2
-$afterWinnerReplay = @((Invoke-Json GET '/api/rewards' $customer) | Where-Object { $_.campaignId -eq $campaignId })
-if ($afterWinnerReplay.Count -ne 1 -or $afterWinnerReplay[0].winnerEntryId -ne $deliveredEntryId) {
-    throw 'Duplicate or canceled winner event created another reward'
+$afterReplay = Invoke-Json GET "/api/analytics/campaigns/$campaignId/stats" $seller
+$replayedNotifications = @((Invoke-Json GET '/api/notifications' $customer) | Where-Object { $_.campaignId -eq $campaignId })
+$replayedRewards = @((Invoke-Json GET '/api/rewards' $customer) | Where-Object { $_.campaignId -eq $campaignId })
+if ($afterReplay.totalEntries -ne $stats.totalEntries -or $replayedNotifications.Count -ne 3 -or $replayedRewards.Count -ne 1) {
+    throw 'Duplicate Kafka delivery changed persisted results'
 }
+$socket.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure, 'done',
+    [Threading.CancellationToken]::None).GetAwaiter().GetResult() | Out-Null
 
-Write-Host 'Smoke test passed: pending reward listing, seller multi-cancel API, CANCELED notification, close race guard, uncanceled delivery only, and replay deduplication.'
+Write-Host 'Smoke test passed: order outbox, one ticket per order, transactional entry, seller/scheduler snapshot close, idempotent single-winner draw, winner details, async notifications/reward, WebSocket realtime, and replay deduplication.'

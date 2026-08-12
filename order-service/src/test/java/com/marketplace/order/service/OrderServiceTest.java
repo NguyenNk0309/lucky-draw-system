@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -33,5 +34,18 @@ class OrderServiceTest {
         service.create("customer-1", new BigDecimal("1000000.00"), "correlation");
         verify(outbox, never()).append(any());
     }
-}
 
+    @Test
+    void sellerCustomerDetailsSummarizeOrderHistory() {
+        when(orders.findByUser("customer-1")).thenReturn(List.of(
+                new com.marketplace.order.domain.Order("one", "customer-1", new BigDecimal("1200000"),
+                        Instant.parse("2026-08-08T00:00:00Z")),
+                new com.marketplace.order.domain.Order("two", "customer-1", new BigDecimal("300000"),
+                        Instant.parse("2026-08-07T00:00:00Z"))));
+
+        var details = service.customerDetails("customer-1");
+
+        assertThat(details.totalOrders()).isEqualTo(2);
+        assertThat(details.totalSpent()).isEqualByComparingTo("1500000");
+    }
+}
