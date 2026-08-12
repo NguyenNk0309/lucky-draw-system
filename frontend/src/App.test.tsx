@@ -277,22 +277,53 @@ describe('app routing', () => {
           ]
         : path.endsWith('/api/tickets')
           ? [{ id: 'ticket-1234', orderId: 'order-1', status: 'ISSUED' }]
-          : path.endsWith('/entries')
-            ? {
-                id: 'entry-1',
-                userId: 'customer-1',
-                ticketId: 'ticket-1234',
-                sequence: 1,
-                submittedAt: '2026-08-09T01:00:00Z',
-              }
-            : path.includes('/analytics/')
-              ? {
+          : path.endsWith('/api/notifications')
+            ? [
+                {
+                  id: 'notification-1',
                   campaignId: 'campaign-1',
-                  entryIds: [],
-                  remainingQuota: 3,
-                  won: false,
-                }
-              : [];
+                  entryId: 'entry-1',
+                  message:
+                    'Ticket submitted. Entry #48 is in campaign 5fd5a258-078f-4494-930e-3dc98801d82f.',
+                  sentAt: '2026-08-09T01:00:00Z',
+                },
+                {
+                  id: 'notification-2',
+                  campaignId: 'campaign-1',
+                  entryId: 'entry-1',
+                  message:
+                    'You won COUPON SAVE-50 in campaign 5fd5a258-078f-4494-930e-3dc98801d82f.',
+                  sentAt: '2026-08-09T02:00:00Z',
+                },
+              ]
+            : path.endsWith('/api/rewards')
+              ? [
+                  {
+                    id: 'reward-1',
+                    campaignId: 'campaign-1',
+                    winnerEntryId: 'entry-1',
+                    rewardType: 'COUPON',
+                    reference: 'SAVE-50',
+                    deliveryReference: 'SAVE-50-FC7B59C4',
+                    deliveredAt: '2026-08-09T02:00:00Z',
+                  },
+                ]
+              : path.endsWith('/entries')
+                ? {
+                    id: 'entry-1',
+                    userId: 'customer-1',
+                    ticketId: 'ticket-1234',
+                    sequence: 1,
+                    submittedAt: '2026-08-09T01:00:00Z',
+                  }
+                : path.includes('/analytics/')
+                  ? {
+                      campaignId: 'campaign-1',
+                      entryIds: [],
+                      remainingQuota: 3,
+                      won: false,
+                    }
+                  : [];
       return Promise.resolve(
         new Response(JSON.stringify(data), {
           headers: { 'Content-Type': 'application/json' },
@@ -324,6 +355,16 @@ describe('app routing', () => {
     expect(socketUrls).toContain(
       'ws://localhost:3000/ws/realtime?access_token=token',
     );
+    expect(
+      await screen.findByText('Ticket submitted to Demo.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('You won Coupon: SAVE-50 in Demo.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Coupon: SAVE-50 - Delivered')).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Entry #48|5fd5a258|FC7B59C4/),
+    ).not.toBeInTheDocument();
     fireEvent.click(
       await screen.findByRole('button', { name: 'Submit ticket ticket-1' }),
     );

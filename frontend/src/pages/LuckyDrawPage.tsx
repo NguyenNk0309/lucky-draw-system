@@ -30,6 +30,20 @@ const emptyStats: Stats = {
   distinctParticipants: 0,
 };
 
+function rewardName(type: 'PRODUCT' | 'COUPON', reference: string) {
+  return `${type === 'COUPON' ? 'Coupon' : 'Product'}: ${reference}`;
+}
+
+function notificationText(item: Notification, campaigns: Campaign[]) {
+  const campaign = campaigns.find(({ id }) => id === item.campaignId);
+  if (item.message.startsWith('Ticket submitted')) {
+    return `Ticket submitted to ${campaign?.name ?? 'campaign'}.`;
+  }
+  return campaign
+    ? `You won ${rewardName(campaign.reward.type, campaign.reward.reference)} in ${campaign.name}.`
+    : 'You won a reward.';
+}
+
 export function LuckyDrawPage() {
   const { session } = useAuth();
   return session!.role === 'SELLER' ? <SellerDraw /> : <CustomerEntry />;
@@ -98,12 +112,11 @@ function CustomerEntry() {
     setMessage('');
     setSubmitting(true);
     try {
-      const entry = await api<LuckyEntry>(
-        `/api/campaigns/${selected}/entries`,
-        token,
-        { method: 'POST', body: JSON.stringify({ ticketId }) },
-      );
-      setMessage(`Ticket submitted as entry #${entry.sequence}.`);
+      await api<LuckyEntry>(`/api/campaigns/${selected}/entries`, token, {
+        method: 'POST',
+        body: JSON.stringify({ ticketId }),
+      });
+      setMessage(`Ticket submitted to ${campaign?.name ?? 'campaign'}.`);
       await tickets.refresh();
       window.setTimeout(() => void mine.refresh(), 500);
     } catch (reason) {
@@ -224,7 +237,9 @@ function CustomerEntry() {
           <Empty show={!notifications.data?.length}>No notifications.</Empty>
           <ul className="items">
             {notifications.data?.map((item) => (
-              <li key={item.id}>{item.message}</li>
+              <li key={item.id}>
+                {notificationText(item, campaigns.data ?? [])}
+              </li>
             ))}
           </ul>
         </section>
@@ -235,9 +250,13 @@ function CustomerEntry() {
             {rewards.data?.map((item) => (
               <li key={item.id}>
                 <span>
-                  {item.rewardType}: {item.reference}
+                  {campaigns.data?.find(({ id }) => id === item.campaignId)
+                    ?.name ?? 'Campaign'}
                 </span>
-                <span>{item.deliveryReference ?? 'Preparing delivery'}</span>
+                <span>
+                  {rewardName(item.rewardType, item.reference)} -{' '}
+                  {item.deliveredAt ? 'Delivered' : 'Preparing delivery'}
+                </span>
               </li>
             ))}
           </ul>
