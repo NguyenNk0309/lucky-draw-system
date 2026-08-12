@@ -91,6 +91,68 @@ describe('app routing', () => {
     expect(screen.queryByLabelText(/Lucky draw wheel/)).not.toBeInTheDocument();
   });
 
+  it('creates a campaign from selected dates', async () => {
+    localStorage.setItem(
+      'lucky-draw-session',
+      JSON.stringify({
+        token: 'token',
+        userId: 'seller-1',
+        role: 'SELLER',
+        expiresAt: Date.now() / 1000 + 3600,
+      }),
+    );
+    const request = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify([]), {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', request);
+
+    render(
+      <MemoryRouter initialEntries={['/campaigns']}>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(await screen.findByLabelText('Name'), {
+      target: { value: 'August draw' },
+    });
+    fireEvent.change(screen.getByLabelText('From date'), {
+      target: { value: '2026-08-12T09:00' },
+    });
+    fireEvent.change(screen.getByLabelText('To date'), {
+      target: { value: '2026-08-19T18:00' },
+    });
+    fireEvent.change(screen.getByLabelText('Entries per user'), {
+      target: { value: '2' },
+    });
+    fireEvent.change(screen.getByLabelText('Reward reference'), {
+      target: { value: 'SAVE-50' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        '/api/campaigns',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            name: 'August draw',
+            startAt: new Date('2026-08-12T09:00').toISOString(),
+            endAt: new Date('2026-08-19T18:00').toISOString(),
+            maxEntriesPerUser: 2,
+            rewardType: 'COUPON',
+            rewardReference: 'SAVE-50',
+          }),
+        }),
+      ),
+    );
+  });
+
   it('lets a seller select and cancel several pending rewards', async () => {
     localStorage.setItem(
       'lucky-draw-session',

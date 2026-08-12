@@ -36,10 +36,8 @@ export function CampaignsPage() {
     const form = new FormData(event.currentTarget);
     void mutate('/api/campaigns', {
       name: form.get('name'),
-      startAt: new Date().toISOString(),
-      endAt: new Date(
-        Date.now() + Number(form.get('minutes')) * 60_000,
-      ).toISOString(),
+      startAt: new Date(String(form.get('startAt'))).toISOString(),
+      endAt: new Date(String(form.get('endAt'))).toISOString(),
       maxEntriesPerUser: Number(form.get('limit')),
       rewardType: form.get('rewardType'),
       rewardReference: form.get('rewardReference'),
@@ -68,14 +66,18 @@ export function CampaignsPage() {
             </label>
             <div className="grid two">
               <label>
-                Duration (minutes)
-                <input name="minutes" type="number" min="1" required />
+                From date
+                <input name="startAt" type="datetime-local" required />
               </label>
               <label>
-                Entries per user
-                <input name="limit" type="number" min="1" required />
+                To date
+                <input name="endAt" type="datetime-local" required />
               </label>
             </div>
+            <label>
+              Entries per user
+              <input name="limit" type="number" min="1" required />
+            </label>
             <label>
               Reward type
               <select name="rewardType">
