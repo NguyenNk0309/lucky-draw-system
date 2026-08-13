@@ -408,12 +408,12 @@ describe('resource loading', () => {
 });
 
 describe('lucky wheel', () => {
-  it('shows equal entry slots for the seller draw', () => {
+  it('shows no text on the seller wheel', () => {
     render(
       <LuckyWheel spinning={false} reward="COUPON: SAVE-50" result="Ready" />,
     );
 
-    expect(screen.getAllByText('ENTRY')).toHaveLength(8);
+    expect(screen.queryByText('ENTRY')).not.toBeInTheDocument();
     expect(
       screen.getByLabelText('Winner draw wheel for COUPON: SAVE-50'),
     ).toBeInTheDocument();

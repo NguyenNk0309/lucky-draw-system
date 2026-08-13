@@ -11,7 +11,6 @@ export function LuckyWheel({
   reward?: string;
   segment?: number;
 }) {
-  const labels = Array(8).fill('ENTRY');
   const stop = 2160 - ((segment ?? 0) * 45 + 22.5);
   return (
     <div className="wheel-stage" aria-live="polite">
@@ -23,17 +22,6 @@ export function LuckyWheel({
           reward ? `Winner draw wheel for ${reward}` : 'Lucky draw wheel'
         }
       >
-        <div className="wheel-labels" aria-hidden="true">
-          {labels.map((label, index) => (
-            <span
-              className="wheel-label"
-              key={`${label}-${index}`}
-              style={{ '--segment': index } as CSSProperties}
-            >
-              {label}
-            </span>
-          ))}
-        </div>
         <div className="wheel-hub">★</div>
       </div>
       <strong className="wheel-result">
